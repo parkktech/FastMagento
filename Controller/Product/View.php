@@ -39,12 +39,12 @@ class View extends MagentoView
         ViewHelper $viewHelper,
         ForwardFactory $resultForwardFactory,
         PageFactory $resultPageFactory,
-        LoggerInterface $logger = null,
-        Data $jsonHelper = null,
-        Design $catalogDesign = null,
-        ProductRepositoryInterface $productRepository = null,
-        StoreManagerInterface $storeManager = null,
-        private CatalogProductView $catalogProductView
+        private CatalogProductView $catalogProductView,
+        ?LoggerInterface $logger = null,
+        ?Data $jsonHelper = null,
+        ?Design $catalogDesign = null,
+        ?ProductRepositoryInterface $productRepository = null,
+        ?StoreManagerInterface $storeManager = null
     ) {
         parent::__construct(
             $context,

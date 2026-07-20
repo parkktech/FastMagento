@@ -55,7 +55,7 @@ class ShellDataProduct extends DataObject implements ProductInterface
     public function __construct(
         ProductUrlModel $urlModel,
         array $doc = [],
-        PriceInfoInterface $priceInfo = null,
+        ?PriceInfoInterface $priceInfo = null,
         array $data = []
     ) {
         parent::__construct($data);
@@ -246,7 +246,7 @@ class ShellDataProduct extends DataObject implements ProductInterface
         return $this->doc['product_links'] ?? null;
     }
 
-    public function setProductLinks(array $links = null)
+    public function setProductLinks(?array $links = null)
     {
         $this->doc['product_links'] = $links;
         return $this;
@@ -257,7 +257,7 @@ class ShellDataProduct extends DataObject implements ProductInterface
         return $this->doc['options'] ?? null;
     }
 
-    public function setOptions(array $options = null)
+    public function setOptions(?array $options = null)
     {
         $this->doc['options'] = $options;
         return $this;
@@ -268,7 +268,7 @@ class ShellDataProduct extends DataObject implements ProductInterface
         return $this->doc['media_gallery_entries'] ?? null;
     }
 
-    public function setMediaGalleryEntries(array $mediaGalleryEntries = null)
+    public function setMediaGalleryEntries(?array $mediaGalleryEntries = null)
     {
         $this->doc['media_gallery_entries'] = $mediaGalleryEntries;
         return $this;
@@ -279,7 +279,7 @@ class ShellDataProduct extends DataObject implements ProductInterface
         return $this->doc['tier_prices'] ?? null;
     }
 
-    public function setTierPrices(array $tierPrices = null)
+    public function setTierPrices(?array $tierPrices = null)
     {
         $this->doc['tier_prices'] = $tierPrices;
         return $this;

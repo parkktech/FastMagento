@@ -29,7 +29,7 @@ class Collection extends ProductCollection
         \Magento\Catalog\Model\Indexer\Product\Flat\State $catalogProductFlatState,
         ScopeConfigInterface $scopeConfig,
         ConnectionManager $connectionManager, // 🔹 OpenSearch Connection
-        \Magento\Framework\DB\Adapter\AdapterInterface $connection = null
+        ?\Magento\Framework\DB\Adapter\AdapterInterface $connection = null
     ) {
         parent::__construct(
             $entityFactory,

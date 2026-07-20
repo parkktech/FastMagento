@@ -51,14 +51,14 @@ class Configurable extends CoreConfigurable
         CatalogProductTypeConfigurable $catalogProductTypeConfigurable,
         ScopeConfigInterface $scopeConfig,
         JoinProcessorInterface $extensionAttributesJoinProcessor,
-        FrontendInterface $cache = null,
-        Session $customerSession = null,
-        Json $serializer = null,
-        ProductInterfaceFactory $productFactory = null,
-        SalableProcessor $salableProcessor = null,
-        ProductAttributeRepositoryInterface $productAttributeRepository = null,
-        SearchCriteriaBuilder $searchCriteriaBuilder = null,
-        UploaderFactory $uploaderFactory = null
+        ?FrontendInterface $cache = null,
+        ?Session $customerSession = null,
+        ?Json $serializer = null,
+        ?ProductInterfaceFactory $productFactory = null,
+        ?SalableProcessor $salableProcessor = null,
+        ?ProductAttributeRepositoryInterface $productAttributeRepository = null,
+        ?SearchCriteriaBuilder $searchCriteriaBuilder = null,
+        ?UploaderFactory $uploaderFactory = null
 
 
     ) {

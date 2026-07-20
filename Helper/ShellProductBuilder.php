@@ -345,7 +345,7 @@ class ShellProductBuilder
 
 
         // If you want a custom ShellPriceInfo:
-        $catalogRulePrice = $osDoc['catalog_rule_price']['rule_price'] ?? null;
+        $catalogRulePrice = $doc['catalog_rule_price']['rule_price'] ?? null;
         $priceInfo = new ShellPriceInfo($this->shellPriceFactory, $regular, $final, $special, $catalogRulePrice);
         $product->setPriceInfo($priceInfo);
 

@@ -140,8 +140,8 @@ class ShellProduct extends CoreProduct
         JoinProcessorInterface $joinProcessor,
         ShellPriceFactory $shellPriceFactory,
         array $data = [],
-        EavConfig $config = null,
-        \Magento\Catalog\Model\FilterProductCustomAttribute $filterCustomAttribute = null
+        ?EavConfig $config = null,
+        ?\Magento\Catalog\Model\FilterProductCustomAttribute $filterCustomAttribute = null
     ) {
         // Save your ShellPriceFactory
         $this->shellPriceFactory = $shellPriceFactory;

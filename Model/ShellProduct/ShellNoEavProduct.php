@@ -90,8 +90,8 @@ class ShellNoEavProduct extends CoreProduct
         UrlFinderInterface $urlFinder,
         CategoryCollectionFactory $categoryCollectionFactory,
         array                               $data = [],
-        \Magento\Eav\Model\Config           $config = null,
-        FilterProductCustomAttribute        $filterCustomAttribute = null
+        ?\Magento\Eav\Model\Config           $config = null,
+        ?FilterProductCustomAttribute        $filterCustomAttribute = null
     )
     {
         $this->collectionFactory = $collectionFactory;

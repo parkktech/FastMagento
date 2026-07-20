@@ -20,7 +20,7 @@ class Collection extends AbstractCollection implements SearchResultInterface
         );
     }
 
-    public function setItems(array $items = null)
+    public function setItems(?array $items = null)
     {
         return $this->_setData('items', $items);
     }
