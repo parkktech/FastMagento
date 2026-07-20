@@ -163,17 +163,25 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
                 continue;
             }
 
-            foreach ($productStoreIds as $storeId) {
-                /** @var Product $product */
-                $product = $this->productRepository->getById($productId, false, $storeId, false);
+            try {
+                foreach ($productStoreIds as $storeId) {
+                    /** @var Product $product */
+                    $product = $this->productRepository->getById($productId, false, $storeId, false);
 
-                $body = $this->prepareDoc($product);
-                $body = $this->setExtensionAttributes($body);
+                    $body = $this->prepareDoc($product);
+                    $body = $this->setExtensionAttributes($body);
 
-                $docs[] = [
-                    'id' => (string)$product->getId(),
-                    'body' => $body
-                ];
+                    $docs[] = [
+                        'id' => (string)$product->getId(),
+                        'body' => $body
+                    ];
+                }
+            } catch (\Throwable $e) {
+                // Never let one product's attribute/data quirk abort a full reindex.
+                $this->writeLog->writeErrorLog(
+                    'Product ID: ' . $productId . ' skipped during indexing: ' . $e->getMessage()
+                );
+                continue;
             }
         }
 
@@ -409,9 +417,9 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
                 $value = [$value ? 'Yes' : 'No'];
             }
 
-            // ✅ Handle dropdown or multi-select attributes
-            if ($attribute->usesSource()) {
-                $source = $attribute->getSource();
+            // ✅ Handle dropdown or multi-select attributes (skip when the source model is unavailable)
+            $source = $this->safeGetSource($attribute);
+            if ($source) {
 
                 // Multi-Select Attribute (Comma-Separated Values)
                 if (is_string($value) && strpos($value, ',') !== false) {
@@ -579,7 +587,7 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
                 continue;
             }
 
-            if ($attribute->usesSource()) {
+            if ($attribute->usesSource() && $this->safeGetSource($attribute)) {
                 $value = $product->getAttributeText($attributeCode);
             }
 
@@ -621,10 +629,32 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
         return $configurableAttributes;
     }
 
+    /**
+     * Resolve an attribute's source model without failing when the source class
+     * is missing or throws. Keeps indexing working on a base Magento install
+     * regardless of any third-party source models left in the attribute config.
+     *
+     * @return \Magento\Eav\Model\Entity\Attribute\Source\SourceInterface|null
+     */
+    private function safeGetSource(AbstractAttribute $attribute)
+    {
+        try {
+            if (!$attribute->usesSource()) {
+                return null;
+            }
+            $source = $attribute->getSource();
+            // Only a real source object is usable; some attribute configs resolve
+            // to a scalar/string, which must not reach ->getOptionText()/->getAllOptions().
+            return is_object($source) ? $source : null;
+        } catch (\Throwable $e) {
+            return null;
+        }
+    }
+
     private function getAttributeOptions(AbstractAttribute $attribute): array
     {
         $options = [];
-        $source = $attribute->getSource();
+        $source = $this->safeGetSource($attribute);
 
         if ($source) {
             foreach ($source->getAllOptions() as $option) {
