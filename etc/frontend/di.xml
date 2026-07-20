@@ -53,11 +53,13 @@
 
 
 
-    <!-- ✅ Plugin: Use ShellProduct ONLY on the frontend -->
+    <!-- Disabled: conflicted with frontend_product_plugin (both aroundLoad on
+         Product at sortOrder 10) and returned a bare product without the OpenSearch
+         fetch. FrontendProductPlugin is the single load choke point. -->
     <type name="Magento\Catalog\Model\Product">
         <plugin name="shell_product_override"
                 type="ParkkTech\FastMagento\Plugin\ShellProductPlugin"
-                sortOrder="10"/>
+                sortOrder="10" disabled="true"/>
     </type>
 
     <type name="Magento\Catalog\Api\ProductRepositoryInterface">
