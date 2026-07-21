@@ -28,4 +28,13 @@
                 sortOrder="100"/>
     </type>
 
+    <!-- OS-serve the quote-item product load (cart/checkout). GLOBAL so it's active for the
+         customer-facing checkout REST/GraphQL calls too, not just the frontend cart page — the
+         area is gated inside the class (isServableArea: frontend/webapi_rest/graphql; adminhtml
+         + cron stay native). Overrides ONLY _assignProducts(); flag-gated (default 0) with a
+         hard native fallback for any missing/partial doc, composite/custom-option cart, or
+         non-servable area. See the class for the full safety contract. -->
+    <preference for="Magento\Quote\Model\ResourceModel\Quote\Item\Collection"
+                type="ParkkTech\FastMagento\Model\ResourceModel\Quote\Item\Collection" />
+
 </config>

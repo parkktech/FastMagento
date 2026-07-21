@@ -167,8 +167,35 @@ Net: simple/virtual/downloadable carts (the real 95%-downloadable catalog) are O
 marginally-to-meaningfully faster (query cut is larger on prod infra with DB network latency);
 composite carts stay native with zero regression. Every commit still inert (flag default 0).
 
+### WEBAPI / GRAPHQL checkout extension (2026-07-21)
+The frontend cart page was only part of the story — **checkout re-loads the quote-item
+collection several times per session via REST** (`totals-information`, `estimate-shipping-
+methods`, on every address/shipping edit) in the **webapi_rest** area, which was still native.
+Extended OS-serving to the customer-facing checkout areas:
+- Guard widened `isFrontendArea()` → **`isServableArea()`** = frontend / webapi_rest / graphql.
+  adminhtml (admin order-create) and cron stay native.
+- Preference moved from `etc/frontend/di.xml` → **global `etc/di.xml`** (area gated in-class).
+
+**Group-pricing bug found + fixed (was silent overcharge in webapi):** the shell resolved its
+catalog-rule group from the **customer session**, which webapi/graphql checkout DON'T populate
+(no storefront session) → every logged-in customer priced as guest (group 0). PROVEN: a
+Wholesale (grp 2) shopper on product 1 got getFinalPrice **58.50 instead of 49.73**.
+Fix: `ShellNoEavProduct::getCurrentCustomerGroupId()` now prefers the group that
+`Quote\Item::setProduct()` stamps onto the product (`hasData('customer_group_id')`),
+area-independent and authoritative; falls back to the session only for non-quote contexts
+(PDP). Frontend unchanged (session group == quote group for a logged-in shopper).
+
+**Validated byte-for-byte** frontend-native (production reference) vs webapi-OS (no session) on
+REAL customer carts across groups: grp-1 89884 670.00=670.00, 85548 77.80=77.80, 90424 0=0
+(correct — grp-1 rule price is 0 for that product); grp-2 product-1 item price 49.73=49.73.
+Guest + frontend unaffected. **webapi item-load SQL: 96 → 63 (−34%)** — now on the checkout
+REST path, ×4-6 loads/checkout (bigger on prod infra with DB network latency).
+QuoteItemPlugin left frontend-only: the shell's group-correct getFinalPrice makes totals right
+in webapi without it (validated).
+
 Still owner-gated (step 5): real supervised order (guest + wholesale) — order-item conversion,
-stock decrement, no overselling — before enabling for real. Harnesses:
+stock decrement, no overselling — before enabling for real. GraphQL uses the same group-stamp
+mechanism but wasn't exercised here (Luma store → webapi_rest is the live path). Harnesses:
 `scratchpad/quote-measure.php` (SQL + per-item getters + totals), `quote-profile.php`
 (per-table / per-class SQL breakdown). Test quotes: 91291 guest 3-type, 91290 wholesale.
 

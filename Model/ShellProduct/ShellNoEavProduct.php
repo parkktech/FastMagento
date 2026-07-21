@@ -220,10 +220,21 @@ class ShellNoEavProduct extends CoreProduct
     }
 
     /**
-     * Current storefront customer group id (0 = NOT LOGGED IN for a guest).
+     * Customer group whose catalog-rule price applies to this product instance.
+     *
+     * On a quote/checkout line, Quote\Item::setProduct() stamps the QUOTE's customer group
+     * onto the product (setCustomerGroupId) BEFORE totals read getFinalPrice(). Prefer that
+     * stamped value: it is authoritative and, crucially, area-independent — the webapi_rest
+     * and graphql checkout flows have NO storefront customer session, so reading the session
+     * there returns 0 and would price EVERY logged-in customer as a guest (e.g. a Wholesale
+     * shopper silently overcharged the group-0 price). Fall back to the session only when the
+     * group was never stamped, i.e. non-quote contexts like the PDP.
      */
     private function getCurrentCustomerGroupId(): int
     {
+        if ($this->hasData('customer_group_id')) {
+            return (int) $this->getData('customer_group_id');
+        }
         try {
             return (int) $this->customerGroupSession->getCustomerGroupId();
         } catch (\Throwable $e) {

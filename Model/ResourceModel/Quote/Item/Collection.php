@@ -122,7 +122,7 @@ class Collection extends \Magento\Quote\Model\ResourceModel\Quote\Item\Collectio
     protected function _assignProducts(): self
     {
         try {
-            if (!$this->isOsServeEnabled() || !$this->isFrontendArea()) {
+            if (!$this->isOsServeEnabled() || !$this->isServableArea()) {
                 return parent::_assignProducts();
             }
 
@@ -289,10 +289,21 @@ class Collection extends \Magento\Quote\Model\ResourceModel\Quote\Item\Collectio
         return $this->osScopeConfig->isSetFlag(self::XML_PATH_OS_SERVE, ScopeInterface::SCOPE_STORE);
     }
 
-    private function isFrontendArea(): bool
+    /**
+     * OS-serve the customer-facing quote loads: the storefront cart (frontend) AND the
+     * checkout REST/GraphQL calls (webapi_rest/graphql), which re-load the quote-item
+     * collection several times per checkout and are the real latency path. Admin order-create
+     * (adminhtml) and cron stay native — they need the full native product (disabled/OOS
+     * products, admin-only pricing) and are not latency-sensitive.
+     */
+    private function isServableArea(): bool
     {
         try {
-            return $this->osAppState->getAreaCode() === Area::AREA_FRONTEND;
+            return in_array(
+                $this->osAppState->getAreaCode(),
+                [Area::AREA_FRONTEND, Area::AREA_WEBAPI_REST, Area::AREA_GRAPHQL],
+                true
+            );
         } catch (\Throwable $e) {
             return false;
         }
