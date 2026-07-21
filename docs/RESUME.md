@@ -142,6 +142,30 @@ override getProductByAttributes to match against the OS child docs). Until then 
 can't be ordered. Simple/virtual/downloadable add + order fine. Also: grouped/bundle add,
 price/image switching visual check.
 
+## Search → variant swatch pre-selection — DONE (see docs/SWATCH-PRESELECT-PLAN.md)
+Searching a specific child ("keira black 34ddd") returns the configurable parent with the
+matching swatches pre-selected on the PDP. All in `Model/Search/InstantSearch.php`, **no
+reindex, no PDP JS**:
+- `deriveVariants()` flattens the parent's existing `child_products[]` + `swatch_options` +
+  `configurable_options_<id>` into matchable variants at query time (reads a precomputed
+  `source['variants']` if a future indexer adds one — none today).
+- `matchSelectedOptions()` pins a super-attribute only when exactly ONE of its option labels is
+  fully present in the query (partial match OK: colour-only or size-only).
+- `applySynonyms()` widens query tokens via the admin thesaurus (`fastmagento/search/synonyms`)
+  before matching, so a synonym pins a differently-named swatch (e.g. "burgundy"→Merlot color 104,
+  "lavender"→Purple). config.xml ships colour-family default groups. "Exactly one" rule keeps it
+  safe (a word that widens onto two option labels no-ops). Possible future upgrade: nearest-hex
+  matching for visual colour swatches (hex is in `swatch_options[...].value`) — deferred.
+- `productUrl()` appends `?color=<optId>&size=<optId>` (attribute **code** => option **id**);
+  `formatProduct()` swaps in the matched child's image + returns `selected_options`.
+- PDP pre-selects for free: native `swatch-renderer.js` `_init` runs
+  `_EmulateSelected($.parseQuery())` (reads `location.search`, keyed by attribute code).
+- Verified via `/fastmagento/search/instant?q=` and in-browser on id 4369. OOS combos stay
+  unselected (renderer greys them). Only wired on the instant/autocomplete path (classic
+  server-rendered results page is a follow-up).
+- Note: pre-existing OS-doc↔jsonConfig stock mismatch (child 3709 Black/34DD) surfaced during
+  testing — that's the stock-reindex staleness below, not this feature.
+
 ## Real-time stock sync — DONE
 `Model/OpenSearch/StockSyncer` + observers (sales_order_place_after,
 sales_order_creditmemo_save_after) + plugins (SourceItemsSave/DeleteInterface) reproject

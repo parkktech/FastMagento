@@ -99,7 +99,7 @@ class InstantSearch
                 'total' => (int) ($response['hits']['total']['value'] ?? count($ids)),
                 'page' => $page,
                 'page_size' => $pageSize,
-                'products' => $this->hydrateProducts($client, $ids),
+                'products' => $this->hydrateProducts($client, $ids, $query),
                 'facets' => $withFacets ? $this->formatFacets($response['aggregations'] ?? []) : [],
             ];
         } catch (\Throwable $e) {
@@ -245,9 +245,10 @@ class InstantSearch
      *
      * @param mixed $client
      * @param int[] $ids
+     * @param string $query raw user query, forwarded for variant swatch pre-selection
      * @return array<int, array<string, mixed>>
      */
-    private function hydrateProducts($client, array $ids): array
+    private function hydrateProducts($client, array $ids, string $query = ''): array
     {
         if (!$ids) {
             return [];
@@ -267,7 +268,7 @@ class InstantSearch
         $products = [];
         foreach ($ids as $id) {                 // keep relevance order from the search index
             if (isset($byId[$id])) {
-                $products[] = $this->formatProduct($id, $byId[$id]);
+                $products[] = $this->formatProduct($id, $byId[$id], $query);
             }
         }
         return $products;
@@ -275,41 +276,255 @@ class InstantSearch
 
     /**
      * @param array<string, mixed> $source
+     * @param string $query the raw user query — used to pre-select configurable variant swatches
      * @return array<string, mixed>
      */
-    private function formatProduct(int $id, array $source): array
+    private function formatProduct(int $id, array $source, string $query = ''): array
     {
         $price = (float) ($source['final_price'] ?? $source['price'] ?? 0);
         $regular = (float) ($source['price'] ?? $price);
+        $image = $this->imageUrl((string) ($source['small_image'] ?? $source['thumbnail'] ?? $source['image'] ?? ''));
+
+        // Search → variant swatch pre-selection: when a configurable hit's query words
+        // pin a specific swatch combination (e.g. "red 34c" → color=Red, size=34C), carry
+        // those option ids in the result URL so the PDP's native swatch renderer opens with
+        // them selected (correct image/price), and show the matched child's image on the card.
+        $selectedOptions = [];
+        if (($source['type_id'] ?? '') === 'configurable' && $query !== '') {
+            // Isolate the swatch match: a single malformed configurable doc must lose only its
+            // own pre-selection, never empty the whole (otherwise-fine) result set.
+            try {
+                $match = $this->matchSelectedOptions($this->deriveVariants($id, $source), $query);
+                if (!empty($match['selected_options'])) {
+                    $selectedOptions = $match['selected_options'];
+                    if (!empty($match['image'])) {
+                        $image = $this->imageUrl((string) $match['image']);
+                    }
+                }
+            } catch (\Throwable $e) {
+                $this->writeLog->writeErrorLog(
+                    '[FastMagento] swatch pre-select skipped for product ' . $id . ': ' . $e->getMessage()
+                );
+            }
+        }
 
         return [
             'id' => $id,
             'sku' => (string) ($source['sku'] ?? ''),
             'name' => (string) ($source['name'] ?? ''),
-            'url' => $this->productUrl($source),
-            'image' => $this->imageUrl((string) ($source['small_image'] ?? $source['thumbnail'] ?? $source['image'] ?? '')),
+            'url' => $this->productUrl($source, $selectedOptions),
+            'image' => $image,
             'price' => $price,
             'regular_price' => $regular,
             'price_formatted' => $this->priceCurrency->format($price, false),
             'regular_price_formatted' => $regular > $price ? $this->priceCurrency->format($regular, false) : null,
             'in_stock' => (bool) ($source['is_in_stock'] ?? true),
+            'selected_options' => $selectedOptions ?: null,
         ];
     }
 
     /**
+     * Flatten a configurable hit's children into matchable variants:
+     * [{id, in_stock, image, options:{code=>optionId}, labels:{code=>label}}].
+     *
+     * Derived from data already in the _source (no reindex): each child's
+     * custom_attributes hold the raw super-attribute option ids, swatch_options maps
+     * (attributeId, optionId) => label, and configurable_options_<id> ties attribute
+     * code ↔ id. A precomputed `variants` array on the doc (if a future indexer adds one)
+     * is used as-is.
+     *
      * @param array<string, mixed> $source
+     * @return array<int, array<string, mixed>>
      */
-    private function productUrl(array $source): string
+    private function deriveVariants(int $id, array $source): array
+    {
+        if (!empty($source['variants']) && is_array($source['variants'])) {
+            return $source['variants'];
+        }
+        $children = $source['child_products'] ?? [];
+        if (!is_array($children) || !$children) {
+            return [];
+        }
+
+        // attribute code => attribute id, from the indexed super-attribute config
+        $codeToAttrId = [];
+        foreach ((array) ($source['configurable_options_' . $id] ?? []) as $sa) {
+            $code = $sa['product_attribute']['attribute_code'] ?? null;
+            $attrId = $sa['attribute_id'] ?? null;
+            if ($code !== null && $attrId !== null) {
+                $codeToAttrId[(string) $code] = (int) $attrId;
+            }
+        }
+        if (!$codeToAttrId) {
+            return [];
+        }
+
+        $swatch = (array) ($source['swatch_options'] ?? []);
+        $variants = [];
+        foreach ($children as $child) {
+            $ca = (array) ($child['custom_attributes'] ?? []);
+            $options = [];
+            $labels = [];
+            foreach ($codeToAttrId as $code => $attrId) {
+                if (!isset($ca[$code]) || $ca[$code] === '') {
+                    continue;
+                }
+                $optId = (string) $ca[$code];
+                $options[$code] = $optId;
+                $labels[$code] = (string) ($swatch[$attrId][$optId]['label'] ?? '');
+            }
+            if (!$options) {
+                continue;
+            }
+            $variants[] = [
+                'id' => (int) ($child['entity_id'] ?? 0),
+                'in_stock' => (bool) ($child['is_in_stock'] ?? false),
+                'image' => (string) ($child['image'] ?? $child['small_image'] ?? $child['thumbnail'] ?? ''),
+                'options' => $options,
+                'labels' => $labels,
+            ];
+        }
+        return $variants;
+    }
+
+    /**
+     * Pin the query to specific swatch options. For each super-attribute, an option is
+     * selected only when EXACTLY ONE of its labels is fully present in the query (all the
+     * label's tokens appear as query words) — ambiguous or unmatched attributes are left
+     * open, so "red bra" pre-selects colour alone and "red 34c bra" pins both.
+     *
+     * @param array<int, array<string, mixed>> $variants
+     * @return array{selected_options:array<string,string>,image:string,child_id:?int}|array{}
+     */
+    private function matchSelectedOptions(array $variants, string $query): array
+    {
+        if (!$variants) {
+            return [];
+        }
+        $qTokens = $this->applySynonyms($this->tokenize($query));
+        if (!$qTokens) {
+            return [];
+        }
+
+        // code => optionId => label
+        $byCode = [];
+        foreach ($variants as $v) {
+            foreach ((array) ($v['options'] ?? []) as $code => $optId) {
+                $label = (string) ($v['labels'][$code] ?? '');
+                if ($label !== '') {
+                    $byCode[$code][(string) $optId] = $label;
+                }
+            }
+        }
+
+        $selected = [];
+        foreach ($byCode as $code => $opts) {
+            $matched = [];
+            foreach ($opts as $optId => $label) {
+                $labelTokens = $this->tokenize($label);
+                if (!$labelTokens) {
+                    continue;
+                }
+                if (!array_diff_key($labelTokens, $qTokens)) {   // every label token is a query word
+                    $matched[(string) $optId] = true;
+                }
+            }
+            if (count($matched) === 1) {
+                $selected[$code] = (string) array_key_first($matched);
+            }
+        }
+        if (!$selected) {
+            return [];
+        }
+
+        // Representative child for the card image: matches every selected option, in stock preferred.
+        $best = null;
+        foreach ($variants as $v) {
+            foreach ($selected as $code => $optId) {
+                if ((string) ($v['options'][$code] ?? '') !== $optId) {
+                    continue 2;
+                }
+            }
+            $best = $v;
+            if (!empty($v['in_stock'])) {
+                break;
+            }
+        }
+
+        return [
+            'selected_options' => $selected,
+            'image' => (string) ($best['image'] ?? ''),
+            'child_id' => isset($best['id']) ? (int) $best['id'] : null,
+        ];
+    }
+
+    /**
+     * Widen a query token set with the admin thesaurus (`fastmagento/search/synonyms`, the same
+     * groups used for fulltext relevance) so a synonym of an option label still pins the swatch —
+     * e.g. a "lavender, purple, violet" group lets "lavender" select the Purple swatch. Safe by
+     * construction: if the widening makes two option labels match, `matchSelectedOptions`' "exactly
+     * one" rule leaves that attribute unpinned rather than guessing. Group terms are matched at the
+     * word level (multi-word synonyms won't hit single tokens — fine for colours/sizes).
+     *
+     * @param array<string, true> $tokens
+     * @return array<string, true>
+     */
+    private function applySynonyms(array $tokens): array
+    {
+        foreach ($this->relevanceConfig->getSynonymGroups() as $group) {
+            foreach ($group as $term) {
+                if (isset($tokens[$term])) {
+                    foreach ($group as $t) {
+                        $tokens[$t] = true;
+                    }
+                    break;
+                }
+            }
+        }
+        return $tokens;
+    }
+
+    /**
+     * Lowercase word set of a string (punctuation-trimmed), for case-insensitive
+     * subset matching of option labels against query words.
+     *
+     * @return array<string, true>
+     */
+    private function tokenize(string $value): array
+    {
+        $tokens = [];
+        foreach (preg_split('/\s+/', mb_strtolower(trim($value))) ?: [] as $part) {
+            $part = trim($part, " \t\n\r\0\x0B.,;:!?\"'()[]");
+            if ($part !== '') {
+                $tokens[$part] = true;
+            }
+        }
+        return $tokens;
+    }
+
+    /**
+     * @param array<string, mixed> $source
+     * @param array<string, string> $selectedOptions attribute code => option id, appended as
+     *        query params so the PDP swatch renderer pre-selects them ($.parseQuery on load)
+     */
+    private function productUrl(array $source, array $selectedOptions = []): string
     {
         $path = (string) ($source['url_path'] ?? $source['url_key'] ?? '');
         if ($path === '') {
-            return $this->storeManager->getStore()->getBaseUrl() . 'catalog/product/view/id/' . ($source['entity_id'] ?? '');
+            $url = $this->storeManager->getStore()->getBaseUrl()
+                . 'catalog/product/view/id/' . ($source['entity_id'] ?? '');
+        } else {
+            $suffix = (string) $this->scopeConfig->getValue(
+                'catalog/seo/product_url_suffix',
+                ScopeInterface::SCOPE_STORE
+            );
+            $url = $this->storeManager->getStore()->getBaseUrl() . ltrim($path, '/') . $suffix;
         }
-        $suffix = (string) $this->scopeConfig->getValue(
-            'catalog/seo/product_url_suffix',
-            ScopeInterface::SCOPE_STORE
-        );
-        return $this->storeManager->getStore()->getBaseUrl() . ltrim($path, '/') . $suffix;
+
+        if ($selectedOptions) {
+            $url .= (strpos($url, '?') === false ? '?' : '&') . http_build_query($selectedOptions);
+        }
+        return $url;
     }
 
     private function imageUrl(string $path): string
