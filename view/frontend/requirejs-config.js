@@ -1,10 +1,8 @@
 var config = {
-    // paths: {
-    //     'plpAjax': 'ParkkTech_FastMagento/js/plp-ajax',
-    //     'pdpAjax': 'ParkkTech_FastMagento/js/pdp-ajax'
-    // },
-    // shim: {
-    //     'plpAjax': { deps: ['jquery'] },
-    //     'pdpAjax': { deps: ['jquery'] }
-    // }
+    map: {
+        '*': {
+            fastmagentoAutocomplete: 'ParkkTech_FastMagento/js/autocomplete',
+            fastmagentoInstantSearch: 'ParkkTech_FastMagento/js/instant-search'
+        }
+    }
 };

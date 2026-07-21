@@ -1,0 +1,17 @@
+<?php
+/** @var \Magento\Framework\View\Element\Template $block */
+$suggestUrl = $block->getUrl('fastmagento/search/suggest');
+$resultsUrl = $block->getUrl('catalogsearch/result');
+?>
+<script type="text/x-magento-init">
+{
+    "#search": {
+        "fastmagentoAutocomplete": {
+            "suggestUrl": "<?= $block->escapeJs($suggestUrl) ?>",
+            "resultsUrl": "<?= $block->escapeJs($resultsUrl) ?>",
+            "minChars": 2,
+            "delay": 200
+        }
+    }
+}
+</script>

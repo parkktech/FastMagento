@@ -1,0 +1,9 @@
+<?php
+/** @var \Magento\Framework\View\Element\Template $block */
+$instantUrl = $block->getUrl('fastmagento/search/instant');
+$config = ['fastmagentoInstantSearch' => ['instantUrl' => $instantUrl, 'pageSize' => 12]];
+?>
+<div class="fm-instant-results"
+     data-mage-init='<?= $block->escapeHtmlAttr(json_encode($config)) ?>'>
+    <div class="fm-results-header"><span class="fm-count">Searching…</span></div>
+</div>

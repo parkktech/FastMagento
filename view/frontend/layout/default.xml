@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<page xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:noNamespaceSchemaLocation="urn:magento:framework/View/Layout/etc/page_configuration.xsd">
+    <head>
+        <css src="ParkkTech_FastMagento::css/fastmagento-search.css"/>
+    </head>
+    <body>
+        <!-- Attach OpenSearch autocomplete to the header search input on every page. -->
+        <referenceContainer name="content">
+            <block class="Magento\Framework\View\Element\Template"
+                   name="fastmagento.autocomplete.init"
+                   template="ParkkTech_FastMagento::search/autocomplete-init.phtml"/>
+        </referenceContainer>
+    </body>
+</page>

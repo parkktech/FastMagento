@@ -2,14 +2,19 @@
 <page xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
       xsi:noNamespaceSchemaLocation="urn:magento:framework/View/Layout/etc/page_configuration.xsd">
     <body>
+        <!-- The instant-search grid renders its own facet sidebar, so drop the native
+             layered navigation to avoid a duplicate filter column. -->
+        <referenceBlock name="catalog.leftnav" remove="true"/>
+        <referenceBlock name="catalogsearch.leftnav" remove="true"/>
+        <referenceContainer name="sidebar.main" remove="true"/>
         <referenceContainer name="content">
-            <!-- Remove default Magento search results block -->
+            <!-- Replace Magento's native search results with the OpenSearch instant-search
+                 grid (facets + products + pagination rendered client-side from
+                 /fastmagento/search/instant). -->
             <referenceBlock name="search.result" remove="true"/>
-
-            <!-- Add OpenSearch-based search results -->
-            <block class="ParkkTech\FastMagento\Block\Search\Results"
-                   name="fastmagento.search.results"
-                   template="ParkkTech_FastMagento::search/results.phtml"/>
+            <block class="Magento\Framework\View\Element\Template"
+                   name="fastmagento.instant.search"
+                   template="ParkkTech_FastMagento::search/instant.phtml"/>
         </referenceContainer>
     </body>
 </page>

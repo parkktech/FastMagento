@@ -5,5 +5,8 @@
         <route id="catalog" frontName="catalog">
             <module name="ParkkTech_FastMagento" before="Magento_Catalog"/>
         </route>
+        <route id="fastmagento" frontName="fastmagento">
+            <module name="ParkkTech_FastMagento"/>
+        </route>
     </router>
 </config>
