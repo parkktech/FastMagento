@@ -93,9 +93,23 @@ native `catalog_product_index_eav`. Setup scripts: `docs/tools/create-fitment-at
      product path — high risk to category-page render (display_mode/custom layout) for
      ~1-3 cold-cache queries, since the category page is already fully served. Revisit only
      if a full category-object serve is wanted for other reasons.
-5. **Layered nav / instant-search UX / write-path sync + delete / resilience
-   (OS-down fallback, zero-downtime alias reindex, reconciliation) / admin config /
-   harden** — see plan §4. Not started.
+5. **Instant-search UX / write-path sync + delete** — ✅ DONE.
+   - ✅ Instant search + autocomplete (Algolia-style): `Model/Search/InstantSearch`
+     (native fulltext index for relevance/facets → hydrate display from magento2_products),
+     `/fastmagento/search/suggest` + `/fastmagento/search/instant`, Luma RequireJS JS
+     (autocomplete.js dropdown + instant-search.js live grid/facets/pagination). Verified
+     in-browser.
+   - ✅ Configurable add-to-cart (getProductByAttributes override matching OS children).
+   - ✅ Real-time stock sync (order/creditmemo observers + MSI SourceItemsSave/Delete
+     plugins) + product-delete removal from the index.
+   - **Still open:** zero-downtime alias reindex, reconciliation job, a full admin config
+     panel (only `fastmagento/search/facet_attributes` wired so far), grouped/bundle
+     add-to-cart, and general hardening.
+
+## IMPORTANT — index completeness
+The product index MUST be fully reindexed (`bin/magento indexer:reset fastmagento_product`
+then `indexer:reindex fastmagento_product`) — a stale indexer lock had left it at 4,402 of
+14,604 docs, which made search hydration drop most hits. Full index = 14,604 docs.
 
 ## Configurable read-path — SWATCHES RENDER (item 3, Stage 1-2 DONE)
 Configurable PDP (`/keira-banded-underwire-bra-1.html`, id 4369) now renders the full
