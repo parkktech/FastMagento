@@ -15,6 +15,14 @@ stops the build unless marked **NEEDS YOU**.
   attribute + catalog-search config. Use `/srk:audit`/`/srk:shave` to delete dead
   code and `/srk:gate` before writing anything new.
 
+## Progress
+- **Phase 0 (stabilize):** di:compile GREEN (nullable params + ctor order fixed);
+  conflicting ShellProductPlugin disabled; indexer hardened (index builds 1383 docs).
+  Committed. Home page 200.
+- **Phase 1 (product object):** PDP still 500 "Product is not loaded" — the OS-hydrated
+  product is rejected by `Catalog\Helper\Product::initProduct` (visibility/status or
+  getById scope). In-progress via delegated agent. This is the crux of Phase 1.
+
 ## Open questions (answer when back — NEEDS YOU)
 _(none yet)_
 

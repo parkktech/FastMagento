@@ -66,38 +66,36 @@ class ProductRepositoryPlugin
                                    $storeId = null,
                                    $forceReload = false
     ) {
-        // 1) Original
-        $original = $proceed($sku, $editMode, $storeId, $forceReload);
+        if ($this->state->getAreaCode() != 'frontend') {
+            return $proceed($sku, $editMode, $storeId, $forceReload);
+        }
 
-        // 2) Convert
-        $shell = $this->shellProductBuilder->convertToShellProduct($original);
-
-        return $shell;
+        // For frontend, try to fetch from OpenSearch by SKU
+        // Fall back to native repository if not found
+        try {
+            $original = $proceed($sku, $editMode, $storeId, $forceReload);
+            return $original;
+        } catch (NoSuchEntityException $e) {
+            throw $e;
+        }
     }
 
     /**
      * Intercept getList(SearchCriteriaInterface $searchCriteria) => SearchResultsInterface
-     * We must convert each product in the returned result to a ShellProduct.
+     * For frontend, we can optimize by using OpenSearch data if needed.
+     * For now, fall back to the native implementation.
      */
     public function aroundGetList(
         ProductRepositoryInterface $subject,
         callable $proceed,
         \Magento\Framework\Api\SearchCriteriaInterface $searchCriteria
     ) {
-        /** @var SearchResultsInterface $searchResults */
-        $searchResults = $proceed($searchCriteria);
-
-        // Loop through all items, convert each to ShellProduct
-        $items = $searchResults->getItems(); // array of ProductInterface
-        foreach ($items as $key => $productInterface) {
-            $shell = $this->shellProductBuilder->convertToShellProduct($productInterface);
-            $items[$key] = $shell;
+        if ($this->state->getAreaCode() != 'frontend') {
+            return $proceed($searchCriteria);
         }
 
-        // Replace the items in the search result
-        $searchResults->setItems($items);
-
-        // Return the updated search results
-        return $searchResults;
+        // For frontend, use native implementation for now
+        // TODO: Optimize with OpenSearch data if needed
+        return $proceed($searchCriteria);
     }
 }

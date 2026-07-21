@@ -210,6 +210,14 @@ class ShellProductBuilder
             $product->setTypeId($doc['type_id']);
         }
 
+        // ✅ Set Status and Visibility as integers (critical for canShow checks)
+        if (isset($doc['status'])) {
+            $product->setStatus((int)$doc['status']);
+        }
+        if (isset($doc['visibility'])) {
+            $product->setVisibility((int)$doc['visibility']);
+        }
+
 // ✅ Set Pricing Data
         $regular = isset($doc['price']) ? (float)$doc['price'] : 0.0;
         $product->setPrice($regular);
@@ -330,7 +338,8 @@ class ShellProductBuilder
             'entity_id', 'sku', 'name', 'store_id', 'website_ids', 'type_id',
             'price', 'final_price', 'special_price', 'stock_data', 'configurable_options',
             'tier_prices', 'catalog_rule_price', 'category_names', 'media_gallery',
-            'attributes', 'child_products'
+            'attributes', 'child_products', 'status', 'visibility',
+            'downloadable_links', 'downloadable_samples'
         ];
 
         foreach ($doc as $key => $value) {
