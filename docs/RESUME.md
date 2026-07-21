@@ -74,14 +74,25 @@ native `catalog_product_index_eav`. Setup scripts: `docs/tools/create-fitment-at
    native downloadable blocks, remove the interim block-removal in catalog_product_view.xml.
 3. **All product types + test products**: no configurable/grouped/bundle exist —
    create samples (configurable needs a super-attribute like `size`) and support each.
-4. **Category from OpenSearch (Phase 2L)**: search page down to **128 SQL** (was 342).
-   ✅ url_rewrite N+1 killed — `CategoryUrlFinderPlugin` batches all category rewrites
-   for a store into one query (112→5). Remaining category-driven SQL is
-   `catalog_category_entity*` ~58 (menu/breadcrumb/tree attribute loads, mostly batched
-   collection loads + a few per-category single-entity loads) + `eav_attribute` ~23.
-   Killing these needs the full category OS indexer: index category
-   name/is_active/include_in_menu/request_path/tree per store, then serve the menu +
-   layered-nav collections from OS. That's the next big build (not just a plugin).
+4. **Category from OpenSearch (Phase 2L)** — LARGELY DONE. Category landing page now
+   fires **0 category/EAV SQL** (fully served); search page **342 → 118**.
+   - ✅ `CategoryIndexer` (`fastmagento_category`) → `magento2_categories` (218 docs:
+     tree structure, menu flags, url paths, all_children). mview subs on
+     catalog_category_entity*. `CategoryDataProvider` loads the whole tree from OS once
+     per request (by-id / children / request_path), native fallback if OS down.
+   - ✅ `CategoryUrlFinderPlugin` — batches category url_rewrite N+1 (112→5).
+   - ✅ `CategoryAttributeLoadPlugin` — serves category collection attribute values
+     (name/url_key/is_active/include_in_menu/is_anchor/all_children) from OS, skipping
+     the catalog_category_entity_* UNION loads. Covers mega-menu, top-nav, breadcrumb
+     parents, layered-nav children. Render diffs verified IDENTICAL plugin on/off.
+   - **DEFERRED (deliberate):** the residual search-page category SQL is ~5 native
+     collection *main* queries (filter joins — cheap indexed lookups, cold-cache only for
+     the FPC-cached menu) + one single-category `CategoryRepository::get()`/`Category::load`
+     from the layered-nav DataProvider. Serving that last model-load from OS needs a
+     COMPLETE category doc (all attrs, dynamic) + a Category shell/aroundLoad mirroring the
+     product path — high risk to category-page render (display_mode/custom layout) for
+     ~1-3 cold-cache queries, since the category page is already fully served. Revisit only
+     if a full category-object serve is wanted for other reasons.
 5. **Layered nav / instant-search UX / write-path sync + delete / resilience
    (OS-down fallback, zero-downtime alias reindex, reconciliation) / admin config /
    harden** — see plan §4. Not started.
