@@ -108,7 +108,7 @@ class ShellNoEavProduct extends CoreProduct
 
     public function getData($key = '', $index = null)
     {
-        return $key !== '' && isset($this->doc[$key]) ? $this->doc[$key] : parent::getData($key, $index);
+        return $key !== '' && isset($this->doc[$key]) && null == $index ? $this->doc[$key] : parent::getData($key, $index);
     }
 
     public function getId()
@@ -145,14 +145,19 @@ class ShellNoEavProduct extends CoreProduct
     {
         $mediaGallery = $this->doc['media_gallery'] ?? [];
         $collection = $this->collectionFactory->create();
-        foreach ($mediaGallery as $image) {
-            $collection->addItem(new DataObject([
-                'file' => $image['file'] ?? '',
-                'url' => $image['url'] ?? '',
-                'label' => $image['label'] ?? '',
-                'position' => $image['position'] ?? '',
-                'disabled' => $image['disabled'] ?? false,
-            ]));
+        foreach ($mediaGallery as $images) {
+            if (!is_array($images)) {
+                continue;
+            }
+            foreach ($images as $image) {
+                $collection->addItem(new DataObject([
+                    'file' => $image['file'] ?? '',
+                    'url' => $image['url'] ?? '',
+                    'label' => $image['label'] ?? '',
+                    'position' => $image['position'] ?? '',
+                    'disabled' => $image['disabled'] ?? false,
+                ]));
+            }
         }
         return $collection;
     }
@@ -164,12 +169,16 @@ class ShellNoEavProduct extends CoreProduct
 
     public function getPrice()
     {
-        return $this->doc['price'] ?? parent::getPrice();
+        return $this->getData('catalog_rule_price')['rule_price']
+            ?? $this->doc['final_price']
+            ?? parent::getPrice();
     }
 
     public function getFinalPrice($qty = null)
     {
-        return $this->doc['final_price'] ?? parent::getFinalPrice($qty);
+        return $this->getData('catalog_rule_price')['rule_price']
+            ?? $this->doc['final_price']
+            ?? parent::getFinalPrice($qty);
     }
 
     public function getSpecialPrice()
@@ -268,6 +277,16 @@ public function getProductUrl($useSid = null)
         }
 
         return $requestPath;
+    }
+
+    public function _afterLoad()
+    {
+        return $this;
+    }
+
+    public function getPriceInfo()
+    {
+        return $this->priceInfo ?? parent::getPriceInfo();
     }
 }
 

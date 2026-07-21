@@ -31,6 +31,10 @@ class OpenSearchPdpFetcher
     /**
      * Fetch doc by $id from the OS index. Return the _source or null if not found.
      */
+    /**
+     * @param int $id
+     * @return array|null
+     */
     public function fetchPdpById(int $id): ?array
     {
         try {

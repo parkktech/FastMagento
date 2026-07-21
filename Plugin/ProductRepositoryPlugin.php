@@ -2,10 +2,13 @@
 
 namespace ParkkTech\FastMagento\Plugin;
 
-use Magento\Catalog\Api\ProductRepositoryInterface;
-use Magento\Catalog\Api\Data\ProductInterface;
+use Magento\Framework\App\State;
+use ParkkTech\FastMagento\Helper\WriteLog;
 use Magento\Framework\Api\SearchResultsInterface;
+use Magento\Catalog\Api\ProductRepositoryInterface;
+use Magento\Framework\Exception\NoSuchEntityException;
 use ParkkTech\FastMagento\Helper\ShellProductBuilder;
+use ParkkTech\FastMagento\Helper\OpenSearchPdpFetcher;
 
 /**
  * A plugin that intercepts ProductRepository calls and converts
@@ -13,13 +16,18 @@ use ParkkTech\FastMagento\Helper\ShellProductBuilder;
  */
 class ProductRepositoryPlugin
 {
-    /** @var ShellProductBuilder */
-    private $shellProductBuilder;
-
+    /**
+     * @param State $state
+     * @param WriteLog $writeLog
+     * @param ShellProductBuilder $shellProductBuilder
+     * @param OpenSearchPdpFetcher $openSearchPdpFetcher
+     */
     public function __construct(
-        ShellProductBuilder $shellProductBuilder
+        private readonly State $state,
+        private readonly WriteLog $writeLog,
+        private readonly ShellProductBuilder $shellProductBuilder,
+        private readonly OpenSearchPdpFetcher $openSearchPdpFetcher
     ) {
-        $this->shellProductBuilder = $shellProductBuilder;
     }
 
     /**
@@ -29,20 +37,22 @@ class ProductRepositoryPlugin
     public function aroundGetById(
         ProductRepositoryInterface $subject,
         callable $proceed,
-                                   $productId,
-                                   $editMode = false,
-                                   $storeId = null,
-                                   $forceReload = false
+        $productId,
+        $editMode = false,
+        $storeId = null,
+        $forceReload = false
     ) {
-        // 1) Call the original method
-        /** @var ProductInterface $original */
-        $original = $proceed($productId, $editMode, $storeId, $forceReload);
+        if ($this->state->getAreaCode() != 'frontend') {
+            return $proceed($productId, $editMode, $storeId, $forceReload);
+        }
 
-        // 2) Convert the plain product into your shell product
-        $shell = $this->shellProductBuilder->convertToShellProduct($original);
+        $doc = $this->openSearchPdpFetcher->fetchPdpById($productId);
+        if (!$doc) {
+            $this->writeLog->writeErrorLog('Product With ID: ' . $productId . ' Does Not Exist in Open Search.');
+            throw new NoSuchEntityException(__('Product ID Does Not Exist'));
+        }
 
-        // 3) Return the shell
-        return $shell;
+        return $this->shellProductBuilder->buildNoEavProductFromOsDoc($doc);
     }
 
     /**

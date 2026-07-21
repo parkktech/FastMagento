@@ -123,4 +123,21 @@ class ShellPrice implements PriceInterface
 
         return $result;
     }
+
+    /**
+     * Stub required by MinimalTierPriceCalculator and configurable product templates.
+     */
+    public function getTierPriceList()
+    {
+        return [];
+    }
+
+    /**
+     * Needed for final_price.phtml templates.
+     */
+    public function getProduct()
+    {
+        return $this->productOptions ? $this->productOptions->getProduct() : null;
+    }
+
 }

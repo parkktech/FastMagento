@@ -10,7 +10,6 @@ class DummyFieldsProvider implements DummyFieldsProviderInterface
 {
     public function getFields(DataObject $entity): array
     {
-        // We don't need to transform or store anything here
-        return [];
+        return ['entity_id'];
     }
 }

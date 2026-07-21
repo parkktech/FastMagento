@@ -1,20 +1,19 @@
-<?xml version="1.0"?>
-<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-        xsi:noNamespaceSchemaLocation="urn:magento:framework:ObjectManager/etc/config.xsd">
-
-
-
+<?xml version="1.0" encoding="UTF-8"?>
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:ObjectManager/etc/config.xsd">
     <!-- ✅ Register ProductIndexer in the indexer registry (used in all scopes) -->
     <type name="Magento\Framework\Indexer\IndexerRegistry">
         <arguments>
             <argument name="indexers" xsi:type="array">
-                <item name="fastmagento_product_indexer" xsi:type="object">
-                    ParkkTech\FastMagento\Model\Indexer\ProductIndexer
-                </item>
+                <item name="fastmagento_product_indexer" xsi:type="object">ParkkTech\FastMagento\Model\Indexer\ProductIndexer</item>
             </argument>
         </arguments>
     </type>
 
+    <type name="ParkkTech\FastMagento\Helper\WriteLog">
+        <arguments>
+            <argument name="logger" xsi:type="object">Psr\Log\LoggerInterface\Proxy</argument>
+        </arguments>
+    </type>
 
 
 </config>

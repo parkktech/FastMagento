@@ -1,6 +1,9 @@
 <?php
+
 namespace ParkkTech\FastMagento\Helper;
 
+use Magento\Eav\Model\Config as EavConfig;
+use Magento\Catalog\Model\Product;
 use ParkkTech\FastMagento\Model\ShellProduct\ShellProduct;
 use ParkkTech\FastMagento\Model\ShellProduct\ShellProductFactory;
 use ParkkTech\FastMagento\Model\ShellProduct\ShellDataProduct;
@@ -16,6 +19,14 @@ use Magento\Catalog\Api\ProductRepositoryInterface;
 use Magento\Framework\Api\DataObjectHelper;
 use Magento\Framework\Data\CollectionFactory;
 use Magento\Framework\DataObject;
+use Magento\Framework\Registry;
+use Magento\CatalogInventory\Api\Data\StockItemInterface;
+use Magento\CatalogInventory\Api\Data\StockItemInterfaceFactory;
+use Magento\ConfigurableProduct\Model\Product\Type\Configurable\AttributeFactory;
+use Magento\Framework\Api\ExtensionAttribute\JoinProcessorInterface;
+use Magento\Catalog\Model\ResourceModel\Eav\AttributeFactory as EavAttributeFactory;
+use ParkkTech\FastMagento\Model\ResourceModel\Product\Type\Configurable\Attribute\Collection as ConfigurableAttributeCollection;
+use ParkkTech\FastMagento\Model\ResourceModel\Product\Type\Configurable\Attribute\CollectionFactory as ConfigurableAttributeCollectionFactory;
 
 /**
  * Builds different "shell" product objects from OpenSearch doc:
@@ -41,7 +52,7 @@ class ShellProductBuilder
     private ProductRepositoryInterface $productRepository;
     private DataObjectHelper $dataObjectHelper;
 
-    private CollectionFactory  $collectionFactory;
+    private CollectionFactory $collectionFactory;
 
 
     /**
@@ -55,10 +66,17 @@ class ShellProductBuilder
         ProductAttributeMediaGalleryEntryInterfaceFactory $mediaGalleryEntryFactory,
         ProductRepositoryInterface $productRepository,
         DataObjectHelper $dataObjectHelper,
-        CollectionFactory $collectionFactory
+        CollectionFactory $collectionFactory,
+        private Registry $registry,
+        private AttributeFactory $attributeFactory,
+        private StockItemInterfaceFactory $stockItemInterfaceFactory,
+        private JoinProcessorInterface $joinProcessor,
+        private ConfigurableAttributeCollectionFactory $configurableAttributeCollectionFactory,
+        private EavConfig $eavConfig,
+        private EavAttributeFactory $eavAttributeFactory
     ) {
-        $this->shellProductFactory     = $shellProductFactory;
-        $this->shellPriceFactory       = $shellPriceFactory;
+        $this->shellProductFactory = $shellProductFactory;
+        $this->shellPriceFactory = $shellPriceFactory;
         $this->shellDataProductFactory = $shellDataProductFactory;
         $this->shellNoEavProductFactory = $shellNoEavProductFactory;
         $this->mediaGalleryEntryFactory = $mediaGalleryEntryFactory;
@@ -125,7 +143,7 @@ class ShellProductBuilder
     public function buildDataProductFromOsDoc(array $doc): ShellDataProduct
     {
         $regular = isset($doc['price']) ? (float)$doc['price'] : 0.0;
-        $final   = isset($doc['final_price']) ? (float)$doc['final_price'] : $regular;
+        $final = isset($doc['final_price']) ? (float)$doc['final_price'] : $regular;
         $special = isset($doc['special_price']) ? (float)$doc['special_price'] : 0.0;
 
         $shellPriceInfo = new ShellPriceInfo(
@@ -137,7 +155,7 @@ class ShellProductBuilder
 
         /** @var ShellDataProduct $shellDataProduct */
         $shellDataProduct = $this->shellDataProductFactory->create([
-            'doc'       => $doc,
+            'doc' => $doc,
             'priceInfo' => $shellPriceInfo
         ]);
 
@@ -153,7 +171,31 @@ class ShellProductBuilder
     {
         /** @var ShellNoEavProduct $noEavProduct */
         $product = $this->shellNoEavProductFactory->create();
-     ;
+
+        if (isset($doc['extension_attributes'])) {
+            $extensionAttributes = $product->getExtensionAttributes();
+            if ($extensionAttributes) {
+                /** @var StockItemInterface $stockItem */
+                $stockItem = $this->stockItemInterfaceFactory->create();
+                if (isset($doc['extension_attributes']['stock_item'])) {
+                    $stockItem->setData($doc['extension_attributes']['stock_item']);
+                    $extensionAttributes->setStockItem($stockItem);
+                    if ($stockItem->getIsInStock() && $stockItem->getQty() > 0) {
+                        $product->setSalable(true);
+                    }
+                }
+
+                if (isset($doc['extension_attributes']['category_links'])) {
+                    $extensionAttributes->setCategoryLinks($doc['extension_attributes']['category_links']);
+                }
+                if (isset($doc['extension_attributes']['configurable_product_links'])) {
+                    $extensionAttributes->setConfigurableProductLinks($doc['extension_attributes']['configurable_product_links']);
+                }
+
+                $product->setExtensionAttributes($extensionAttributes);
+                unset($doc['extension_attributes']);
+            }
+        }
 
         $product->setOsDoc($doc);
 
@@ -177,7 +219,7 @@ class ShellProductBuilder
         $product->setFinalPrice($final);
         $product->setData('final_price', $final);
 
-        $special = isset($doc['special_price']) ? (float)$doc['special_price'] : 0.0;
+        $special = isset($doc['special_price']) ? (float)$doc['special_price'] : null;
         $product->setSpecialPrice($special);
         $product->setData('special_price', $special);
 
@@ -189,8 +231,54 @@ class ShellProductBuilder
         }
 
 // ✅ Set Configurable Options
-        if (!empty($doc['configurable_options_' . $doc['entity_id']])) {
+        if (!empty($doc['configurable_options_' . $doc['entity_id']]) && is_array($doc['configurable_options_' . $doc['entity_id']])) {
+            $configurableOptions = $doc['configurable_options_' . $doc['entity_id']];
+
+            /** @var ConfigurableAttributeCollection $attributesCollectionFactory */
+            $attributesCollectionFactory = $this->configurableAttributeCollectionFactory->create();
+            $attributesCollectionFactory = $attributesCollectionFactory->setProductFilter($product);
+            $this->joinProcessor->process($attributesCollectionFactory);
+
+            foreach ($configurableOptions as $configurableOption) {
+                $attributeFactory = $this->attributeFactory->create();
+                foreach ($configurableOption as $item => $value) {
+                    if ($item == 'product_attribute') {
+
+                        //May be, delete and use only continue.
+                        /** @var \Magento\Catalog\Model\ResourceModel\Eav\Attribute $catalogEavAttribute */
+                        $catalogEavAttribute = $this->eavAttributeFactory->create();
+                        $catalogEavAttribute->setData($value);
+                        $attributeFactory->setProductAttribute($catalogEavAttribute);
+                        continue;
+
+                    }
+
+//                    if ($item == 'attribute_id') {
+//                        $attribute = $this->eavConfig->getAttribute(\Magento\Catalog\Model\Product::ENTITY, $value);
+//                        $attributeFactory->setProductAttribute($attribute);
+//                        $attributeFactory->setData($item, $value);
+//                        continue;
+//                    }
+
+                    $attributeFactory->setData($item, $value);
+                }
+                $attributesCollectionFactory->addItem($attributeFactory);
+            }
+
+            /**
+             * It will skip loading of the collection with laod() method when ever looping on the attribute collection.
+             */
+            $attributesCollectionFactory->markLoaded();
+
             $product->setData('configurable_options', $doc['configurable_options_' . $doc['entity_id']]);
+            $product->setData('_cache_instance_configurable_attributes', $attributesCollectionFactory);
+
+            if ($this->registry->registry('configurable_options_' . $doc['entity_id'])) {
+                $this->registry->unregister('configurable_options_' . $doc['entity_id']);
+                $this->registry->register('configurable_options_' . $doc['entity_id'], $attributesCollectionFactory);
+            } else {
+                $this->registry->register('configurable_options_' . $doc['entity_id'], $attributesCollectionFactory);
+            }
         }
 
 // ✅ Set Tier Prices
@@ -226,6 +314,15 @@ class ShellProductBuilder
 // ✅ Set Child Products
         if (!empty($doc['child_products']) && is_array($doc['child_products'])) {
             $product->setData('child_products', $doc['child_products']);
+
+            $childProducts = [];
+            foreach ($doc['child_products'] as $child) {
+                //Make recursive calls to this method to add all child products.
+                $childProducts[] = $this->buildNoEavProductFromOsDoc($child);
+            }
+
+            $this->registry->unregister('child_products');
+            $this->registry->register('child_products', $childProducts);
         }
 
 // ✅ Loop Through Remaining Keys and Set Any Unhandled Values
@@ -248,60 +345,59 @@ class ShellProductBuilder
 
 
         // If you want a custom ShellPriceInfo:
-         $priceInfo = new ShellPriceInfo($this->shellPriceFactory, $regular, $final, $special);
+        $catalogRulePrice = $osDoc['catalog_rule_price']['rule_price'] ?? null;
+        $priceInfo = new ShellPriceInfo($this->shellPriceFactory, $regular, $final, $special, $catalogRulePrice);
         $product->setPriceInfo($priceInfo);
 
         return $product;
     }
+
+    /**
+     * @param ProductInterface $product
+     * @param array $mediaGallery
+     * @return ProductInterface
+     */
     public function setMediaGallery(\Magento\Catalog\Api\Data\ProductInterface $product, array $mediaGallery)
     {
         if (empty($mediaGallery['images'])) {
             return $product;
         }
 
-
-        $collection = $this->collectionFactory->create();
         $mediaEntries = [];
+        $legacyImages = [];
+
         foreach ($mediaGallery['images'] as $imageData) {
+            $file = $imageData['file'] ?? null;
+            $mediaType = $imageData['media_type'] ?? 'image';
+            $label = $imageData['label'] ?? '';
+            $position = (int)($imageData['position'] ?? 0);
+            $disabled = (bool)($imageData['disabled'] ?? false);
 
-            $mediaType = $imageData['media_type'] ?? 'image'; // ✅ Default to 'image'
-
-            // ✅ Ensure media type is valid
-            if (!in_array($mediaType, ['image', 'video'])) {
-                $mediaType = 'image';
-            }
-
-            $mediaEntry = new DataObject([
-                'file'      => $imageData['file'] ?? null,
-                'media_type'=> $mediaType,
-                'label'     => $imageData['label'] ?? '',
-                'position'  => (int)($imageData['position'] ?? 0),
-                'disabled'  => (bool)($imageData['disabled'] ?? false),
-            ]);
-            $collection->addItem($mediaEntry);
-
-
-
-            // ✅ Create MediaGalleryEntry for getMediaGalleryEntries()
             $mediaGalleryEntry = $this->mediaGalleryEntryFactory->create();
+            $mediaGalleryEntry->setFile($file);
+            $mediaGalleryEntry->setLabel($label);
+            $mediaGalleryEntry->setPosition($position);
+            $mediaGalleryEntry->setDisabled($disabled);
             $mediaGalleryEntry->setMediaType($mediaType);
-            $mediaGalleryEntry->setFile($imageData['file'] ?? null);
-            $mediaGalleryEntry->setLabel($imageData['label'] ?? '');
-            $mediaGalleryEntry->setPosition((int)($imageData['position'] ?? 0));
-            $mediaGalleryEntry->setDisabled((bool)($imageData['disabled'] ?? false));
-
             $mediaEntries[] = $mediaGalleryEntry;
 
+            $legacyImages[] = [
+                'file' => $file,
+                'media_type' => $mediaType,
+                'label' => $label,
+                'position' => $position,
+                'disabled' => $disabled,
+                'value_id' => null
+            ];
         }
 
-
-        // ✅ Assign Media Entries to Product
         $product->setMediaGalleryEntries($mediaEntries);
-
-        // ✅ Set the collection on the product (Critical Fix)
-        $product->setData('media_gallery_images', $collection);
+        $mediaGalleryArray = [
+            'images' => $legacyImages,
+            'values' => [] // optional
+        ];
+        $product->setData('media_gallery', $mediaGalleryArray);
 
         return $product;
-
     }
 }

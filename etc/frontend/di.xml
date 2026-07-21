@@ -33,18 +33,15 @@
 
     <!-- ✅ Override TierPrice Only on Frontend -->
     <preference for="Magento\Catalog\Pricing\Price\TierPrice"
-                type="ParkkTech\FastMagento\Pricing\Price\TierPrice">
-    </preference>
+                type="ParkkTech\FastMagento\Pricing\Price\TierPrice" />
 
     <!-- ✅ Override CatalogRulePrice Only on Frontend -->
     <preference for="Magento\CatalogRule\Pricing\Price\CatalogRulePrice"
-                type="ParkkTech\FastMagento\Pricing\Price\CatalogRulePrice">
-    </preference>
+                type="ParkkTech\FastMagento\Pricing\Price\CatalogRulePrice" />
 
     <!-- ✅ Override Configurable::getParentIdsByChild() Only on Frontend -->
     <preference for="Magento\ConfigurableProduct\Model\ResourceModel\Product\Type\Configurable"
-                type="ParkkTech\FastMagento\Model\Configurable\ConfigurableProductType">
-    </preference>
+                type="ParkkTech\FastMagento\Model\Configurable\ConfigurableProductType" />
 
     <!-- ✅ Override Magento’s Configurable Product Type -->
     <preference for="Magento\ConfigurableProduct\Model\Product\Type\Configurable"
@@ -52,17 +49,33 @@
 
     <!-- ✅ Use OpenSearch for StockRegistry on the frontend -->
   <preference for="Magento\CatalogInventory\Api\StockRegistryInterface"
-                type="ParkkTech\FastMagento\Model\OpenSearchStockRegistry">
-    </preference>
+                type="ParkkTech\FastMagento\Model\OpenSearchStockRegistry" />
 
 
 
     <!-- ✅ Plugin: Use ShellProduct ONLY on the frontend -->
-<!--    <type name="Magento\Catalog\Model\Product">
+    <type name="Magento\Catalog\Model\Product">
         <plugin name="shell_product_override"
                 type="ParkkTech\FastMagento\Plugin\ShellProductPlugin"
                 sortOrder="10"/>
-    </type>-->
+    </type>
+
+    <type name="Magento\Catalog\Api\ProductRepositoryInterface">
+        <plugin name="shell_product_override" type="ParkkTech\FastMagento\Plugin\ProductRepositoryPlugin" sortOrder="10" disabled="false"/>
+    </type>
+
+    <preference for="Magento\ConfigurableProduct\Model\ResourceModel\Product\Type\Configurable\Attribute\Collection"
+                type="ParkkTech\FastMagento\Model\ResourceModel\Product\Type\Configurable\Attribute\Collection"/>
+    <type name="Magento\Catalog\Model\Product">
+        <plugin name="catalogInventoryAfterLoad" disabled="true"/>
+    </type>
+
+    <type name="Magento\Checkout\Model\Cart">
+        <plugin name="fastmagento_set_custom_price" type="ParkkTech\FastMagento\Plugin\Checkout\AddProductPlugin" />
+    </type>
+    <type name="Magento\Quote\Model\Quote\Item">
+        <plugin name="inject_price_on_get_product" type="ParkkTech\FastMagento\Plugin\Quote\QuoteItemPlugin" />
+    </type>
 
     <!-- ✅ Override Magento's front-end Product View Controller -->
 <!--

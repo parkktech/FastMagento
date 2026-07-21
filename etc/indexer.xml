@@ -1,32 +1,16 @@
-<?xml version="1.0"?>
-<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-        xsi:noNamespaceSchemaLocation="urn:magento:framework:Indexer/etc/indexer.xsd">
-
-    <!--
-        We define a custom indexer with incremental (mview) support.
-        'id' == 'view_id' == 'primary' to keep them consistent.
-    -->
+<?xml version="1.0" encoding="UTF-8"?>
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:Indexer/etc/indexer.xsd">
     <indexer
-        id="fastmagento_product_indexer"
-        view_id="fastmagento_product_indexer"
+        id="fastmagento_product"
+        view_id="fastmagento_product"
         class="ParkkTech\FastMagento\Model\Indexer\ProductIndexer"
-        primary="fastmagento_product_indexer">
-
-        <title translate="true">FastMagento Product Indexer</title>
+        primary="fastmagento_product"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:noNamespaceSchemaLocation="urn:magento:framework:Indexer/etc/indexer.xsd"
+    >
+        <title translate="true">FastMagento Product</title>
         <description translate="true">
             Rebuilds product data directly from EAV to OpenSearch (with incremental updates).
         </description>
-
-        <!--
-            <fieldset> is required by Magento 2.4.x indexer.xsd.
-            We reference the built-in Product\Collection as "source"
-            and a dummy provider to satisfy the schema.
-        -->
-        <fieldset name="fastmagento_pdp"
-                  source="Magento\Catalog\Model\ResourceModel\Product\Collection"
-                  provider="ParkkTech\FastMagento\Model\Indexer\DummyFieldsProvider">
-            <field name="entity_id" xsi:type="filterable" dataType="int"/>
-        </fieldset>
     </indexer>
-
 </config>

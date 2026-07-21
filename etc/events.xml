@@ -2,8 +2,8 @@
 <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
         xsi:noNamespaceSchemaLocation="urn:magento:framework/Event/etc/events.xsd">
 
-    <event name="catalog_product_save_after">
-        <observer name="fastmagento_product_save" instance="ParkkTech\FastMagento\Observer\ProductSave" />
-    </event>
+<!--    <event name="catalog_product_save_after">-->
+<!--        <observer name="fastmagento_product_save" instance="ParkkTech\FastMagento\Observer\ProductSave" />-->
+<!--    </event>-->
 
 </config>

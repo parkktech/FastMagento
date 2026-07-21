@@ -1,31 +1,23 @@
-<?xml version="1.0"?>
-<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-        xsi:noNamespaceSchemaLocation="urn:magento:framework:Mview/etc/mview.xsd">
-
-    <!--
-        The "id" must match the indexer ID from indexer.xml.
-        We omit a standalone <field> node because Magento 2.4.x only allows <subscriptions> here.
-    -->
-    <view
-        id="fastmagento_product_indexer"
-        class="ParkkTech\FastMagento\Model\Indexer\ProductIndexer"
-        group="indexer">
-
-
+<?xml version="1.0" encoding="UTF-8"?>
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:Mview/etc/mview.xsd">
+    <view id="fastmagento_product" class="ParkkTech\FastMagento\Model\Indexer\ProductIndexer" group="indexer">
         <subscriptions>
-            <!--
-                'field="entity_id"' indicates the primary key field to track changes by.
-                When the "catalog_product_entity" table changes, we incrementally update the indexer.
-            -->
-
-            <table name="catalog_product_entity" entity_column="entity_id">
-                <additionalColumns>
-                    <column name="entity_id" cl_name="entity_id" />
-                </additionalColumns>
-            </table>
-         <!--   <table name="catalog_product_entity" entity_column="entity_id" />-->
-
+            <table name="catalog_product_entity" entity_column="entity_id" />
+            <table name="catalog_product_entity_datetime" entity_column="entity_id" />
+            <table name="catalog_product_entity_decimal" entity_column="entity_id" />
+            <table name="catalog_product_entity_gallery" entity_column="entity_id" />
+            <table name="catalog_product_entity_int" entity_column="entity_id" />
+            <table name="catalog_product_entity_media_gallery_value" entity_column="entity_id" />
+            <table name="catalog_product_entity_text" entity_column="entity_id" />
+            <table name="catalog_product_entity_tier_price" entity_column="entity_id" />
+            <table name="catalog_product_entity_varchar" entity_column="entity_id" />
+            <table name="catalog_product_website" entity_column="product_id" />
+            <table name="catalog_product_super_link" entity_column="product_id" />
+            <table name="catalog_product_link" entity_column="product_id" />
+            <table name="catalog_product_bundle_selection" entity_column="parent_product_id" />
+            <table name="catalog_category_product" entity_column="product_id" />
+            <table name="cataloginventory_stock_item" entity_column="product_id" />
+            <table name="catalogrule_product_price" entity_column="product_id" />
         </subscriptions>
     </view>
-
 </config>

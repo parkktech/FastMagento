@@ -243,7 +243,7 @@ class OpenSearchStockRegistry implements StockRegistryInterface
     private function buildStockStatusFromRegistry($product): StockStatusInterface
     {
         /** @var StockStatusInterface $stockStatus */
-        $stockStatus = $this->stockRegistryProvider->getStockStatus($product->getId());
+        $stockStatus = $this->stockRegistryProvider->getStockStatus($product->getId(), null);
 
         $stockStatus->setStockStatus($product->getData('is_in_stock') ?? false);
         return $stockStatus;
