@@ -18,9 +18,12 @@ $defs = [
   'revision_code'       => ['text','varchar','Revision Code', null, false],
   // textarea - product level
   'install_notes'       => ['textarea','text','Install Notes', null, false],
-  // multiselect - filterable
-  'compatible_platforms'=> ['multiselect','varchar','Compatible Platforms', ['Jeep','Ford','Chevrolet','Toyota','Polaris','Can-Am','Universal'], true],
-  'included_formats'    => ['multiselect','varchar','Included Formats', ['DXF','DWG','STEP','PDF','STL'], true],
+  // multiselect - filterable. backend_type MUST be 'text' (values in
+  // catalog_product_entity_text): the core EAV Source indexer only indexes
+  // multiselect attrs where backend_type='text' (Source.php _getIndexableAttributes),
+  // so 'varchar' silently yields 0 rows in catalog_product_index_eav (no facet).
+  'compatible_platforms'=> ['multiselect','text','Compatible Platforms', ['Jeep','Ford','Chevrolet','Toyota','Polaris','Can-Am','Universal'], true],
+  'included_formats'    => ['multiselect','text','Included Formats', ['DXF','DWG','STEP','PDF','STL'], true],
 ];
 foreach ($defs as $code => [$input,$type,$label,$options,$filterable]) {
     if ($eavSetup->getAttributeId(Product::ENTITY, $code)) { echo "SKIP $code\n"; continue; }

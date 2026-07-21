@@ -24,9 +24,15 @@ native `catalog_product_index_eav`. Setup scripts: `docs/tools/create-fitment-at
 `create-attribute-sets.php`, `create-attribute-sets-2.php`.
 
 ## NEXT — in priority order
-1. **Multiselect → native EAV facet index** (compatible_platforms/included_formats =
-   0 rows in catalog_product_index_eav). Boolean/select work; multiselect doesn't
-   surface for 3rd-party layered nav. It IS in the OS doc. (Magento multiselect-EAV nuance.)
+1. ✅ **DONE — Multiselect → native EAV facet index.** Root cause: the test-bed
+   attrs were created with `backend_type='varchar'`; Magento's core EAV Source
+   indexer only indexes multiselect where `backend_type='text'` (reads
+   `catalog_product_entity_text`), so they yielded 0 rows in
+   `catalog_product_index_eav`. Fixed: flipped both attrs to `text`, migrated values
+   varchar→text (`docs/tools/fix-multiselect-backend-type.sql`), corrected
+   `create-alltype-attrs.php`. compatible_platforms=5444 rows/1368 products/6 opts,
+   included_formats=5436/1368/5. Both facets now render + filter on category AND
+   search layered nav (verified counts category-scoped: 100→30 for Jeep).
 2. **Downloadable proper hydration** (95% of catalog): index links/samples, hydrate
    native downloadable blocks, remove the interim block-removal in catalog_product_view.xml.
 3. **All product types + test products**: no configurable/grouped/bundle exist —
