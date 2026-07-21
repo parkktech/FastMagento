@@ -9,6 +9,9 @@ is hydrated from the OpenSearch document), it runs on **base Magento only**, and
 
 The goal is to drive product/EAV SQL toward zero on the hot paths.
 
+**🔗 See it in action:** [www.diyoffroad.com](https://www.diyoffroad.com/) — a live storefront
+running this serving layer.
+
 **Measured on a production-sized catalog:**
 
 | Page | Before | After |
