@@ -364,8 +364,20 @@ class ShellProductBuilder
                 $childProducts[] = $this->buildNoEavProductFromOsDoc($child);
             }
 
+            // Register children BOTH globally (legacy "last built" convention) AND keyed by
+            // this parent's id. The global key is overwritten whenever any other configurable
+            // is hydrated in the same request — so a cart with two configurables, or an
+            // add-to-cart while another configurable sits in the quote, resolved options
+            // against the WRONG parent's children and silently failed. The per-id key lets
+            // getUsedProducts()/getProductByAttributes() fetch the right children regardless.
+            $parentId = (int) ($doc['entity_id'] ?? 0);
             $this->registry->unregister('child_products');
             $this->registry->register('child_products', $childProducts);
+            if ($parentId) {
+                $perIdKey = 'child_products_' . $parentId;
+                $this->registry->unregister($perIdKey);
+                $this->registry->register($perIdKey, $childProducts);
+            }
 
             // A composite parent (configurable/grouped/bundle) holds no stock of its own —
             // its stock_item is is_in_stock=0. Without this the parent shell is is_salable=0,

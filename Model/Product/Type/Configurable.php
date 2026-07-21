@@ -152,7 +152,9 @@ class Configurable extends CoreConfigurable
      */
     public function getProductByAttributes($attributesInfo, $product)
     {
-        if (is_array($attributesInfo) && !empty($attributesInfo) && $this->registry->registry('child_products')) {
+        $hasChildren = $this->registry->registry('child_products_' . (int) $product->getId())
+            || $this->registry->registry('child_products');
+        if (is_array($attributesInfo) && !empty($attributesInfo) && $hasChildren) {
             $codeByAttributeId = [];
             foreach ($this->getConfigurableAttributes($product) as $attribute) {
                 $productAttribute = $attribute->getProductAttribute();
@@ -185,11 +187,15 @@ class Configurable extends CoreConfigurable
      */
     public function getUsedProducts($configurableProduct, $requiredAttributeIds = null)
     {
-        $registryKey = 'child_products';
-
-        // ✅ Check if data is in registry
-        if ($this->registry->registry($registryKey)) {
-            return $this->registry->registry($registryKey);
+        // Prefer this product's own child set (per-id key), so a second configurable in the
+        // same request can't return the first one's children; fall back to the legacy global
+        // key, then to the native DB load.
+        $perIdKey = 'child_products_' . (int) $configurableProduct->getId();
+        if ($this->registry->registry($perIdKey)) {
+            return $this->registry->registry($perIdKey);
+        }
+        if ($this->registry->registry('child_products')) {
+            return $this->registry->registry('child_products');
         }
 
         // ✅ Fallback to Magento Core Database if not found in registry

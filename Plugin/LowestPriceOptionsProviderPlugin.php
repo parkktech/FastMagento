@@ -44,7 +44,10 @@ class LowestPriceOptionsProviderPlugin
         ProductInterface $product
     ) {
         if ($product instanceof ShellNoEavProduct) {
-            $shells = $this->registry->registry('child_products');
+            // Prefer this product's own child set; the doc-id match below still guards the
+            // legacy global key against a different configurable's children.
+            $shells = $this->registry->registry('child_products_' . (int) $product->getId())
+                ?: $this->registry->registry('child_products');
             $docChildren = $product->getChildProducts();
 
             if (is_array($shells) && $shells && is_array($docChildren) && $docChildren) {
