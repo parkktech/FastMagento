@@ -15,11 +15,4 @@
         </arguments>
     </type>
 
-    <!-- ✅ Plugin: Override getLinks/getSamples in Links block for shell products -->
-    <type name="Magento\Downloadable\Block\Catalog\Product\Links">
-        <plugin name="fastmagento_downloadable_block_links_plugin"
-                type="ParkkTech\FastMagento\Plugin\Downloadable\BlockLinksPlugin"
-                sortOrder="10"/>
-    </type>
-
 </config>

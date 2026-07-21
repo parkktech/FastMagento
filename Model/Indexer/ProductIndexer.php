@@ -467,11 +467,80 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
             $productData['final_price'] = (float)$product->getFinalPrice();
         }
 
+        // ✅ Downloadable: index full link/sample data so the native PDP blocks render
+        // straight from OpenSearch (title/price/sample), no downloadable SQL on read.
+        if ($product->getTypeId() === 'downloadable') {
+            $productData['downloadable_links'] = $this->getDownloadableLinks($product);
+            $productData['downloadable_samples'] = $this->getDownloadableSamples($product);
+        }
+
         $productData['website_ids'] = $product->getWebsiteIds();
         $productData['store_id'] = $product->getStoreId();
         $productData['store_ids'] = $product->getStoreIds();
 
         return $productData;
+    }
+
+    /**
+     * Serialize a downloadable product's links to plain arrays (the raw type-instance
+     * Link objects json-encode to {}), store/website-resolved title + price like the
+     * native block. Read back into Link models by ShellProductBuilder.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function getDownloadableLinks(\Magento\Catalog\Model\Product $product): array
+    {
+        $out = [];
+        try {
+            foreach ($product->getTypeInstance()->getLinks($product) as $link) {
+                $out[] = [
+                    'link_id' => (int) $link->getId(),
+                    'title' => (string) $link->getTitle(),
+                    'price' => (float) $link->getPrice(),
+                    'sort_order' => (int) $link->getSortOrder(),
+                    'is_shareable' => (int) $link->getIsShareable(),
+                    'number_of_downloads' => (int) $link->getNumberOfDownloads(),
+                    'link_type' => (string) $link->getLinkType(),
+                    'link_url' => (string) $link->getLinkUrl(),
+                    'link_file' => (string) $link->getLinkFile(),
+                    'sample_type' => (string) $link->getSampleType(),
+                    'sample_url' => (string) $link->getSampleUrl(),
+                    'sample_file' => (string) $link->getSampleFile(),
+                ];
+            }
+        } catch (\Throwable $e) {
+            $this->writeLog->writeErrorLog(
+                '[FastMagento] downloadable links index failed for ' . $product->getId() . ': ' . $e->getMessage()
+            );
+        }
+        return $out;
+    }
+
+    /**
+     * Serialize a downloadable product's samples to plain arrays.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function getDownloadableSamples(\Magento\Catalog\Model\Product $product): array
+    {
+        $out = [];
+        try {
+            foreach ($product->getTypeInstance()->getSamples($product) as $sample) {
+                $out[] = [
+                    'sample_id' => (int) $sample->getId(),
+                    'title' => (string) $sample->getTitle(),
+                    'sort_order' => (int) $sample->getSortOrder(),
+                    'sample_type' => (string) $sample->getSampleType(),
+                    'sample_url' => (string) $sample->getSampleUrl(),
+                    'sample_file' => (string) $sample->getSampleFile(),
+                ];
+            }
+        } catch (\Throwable $e) {
+            $this->writeLog->writeErrorLog(
+                '[FastMagento] downloadable samples index failed for ' . $product->getId() . ': ' . $e->getMessage()
+            );
+        }
+        return $out;
     }
 
     private function getAttributeValues(\Magento\Catalog\Model\Product $product): array

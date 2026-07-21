@@ -11,9 +11,5 @@
                  <!--  template="ParkkTech_FastMagento::product/view.phtml"-->
 
         </referenceBlock>
-
-        <!-- ✅ Disable downloadable blocks that don't work with shell products -->
-        <referenceBlock name="product.info.downloadable.options" remove="true" />
-        <referenceBlock name="product.info.downloadable.samples" remove="true" />
     </body>
 </page>

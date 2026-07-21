@@ -73,7 +73,9 @@ class ShellProductBuilder
         private JoinProcessorInterface $joinProcessor,
         private ConfigurableAttributeCollectionFactory $configurableAttributeCollectionFactory,
         private EavConfig $eavConfig,
-        private EavAttributeFactory $eavAttributeFactory
+        private EavAttributeFactory $eavAttributeFactory,
+        private \Magento\Downloadable\Model\LinkFactory $downloadableLinkFactory,
+        private \Magento\Downloadable\Model\SampleFactory $downloadableSampleFactory
     ) {
         $this->shellProductFactory = $shellProductFactory;
         $this->shellPriceFactory = $shellPriceFactory;
@@ -354,12 +356,66 @@ class ShellProductBuilder
         }
 
 
+        // ✅ Downloadable: hydrate Link/Sample models from the OS doc so native
+        // getLinks()/getSamples() serve them without a DB round-trip.
+        if (($doc['type_id'] ?? null) === 'downloadable') {
+            $this->hydrateDownloadable($product, $doc);
+        }
+
         // If you want a custom ShellPriceInfo:
         $catalogRulePrice = $doc['catalog_rule_price']['rule_price'] ?? null;
         $priceInfo = new ShellPriceInfo($this->shellPriceFactory, $regular, $final, $special, $catalogRulePrice);
         $product->setPriceInfo($priceInfo);
 
         return $product;
+    }
+
+    /**
+     * Rebuild downloadable Link/Sample models from the indexed arrays and pre-set them on
+     * the product. Native Downloadable\Type::getLinks()/getSamples() return early when
+     * these are already set, so the PDP renders titles/prices/samples with no downloadable
+     * SQL. If the doc carries no link data we leave them unset and native falls back to its
+     * own DB load (correct, just not OS-served).
+     *
+     * @param array<string, mixed> $doc
+     */
+    private function hydrateDownloadable(ShellNoEavProduct $product, array $doc): void
+    {
+        try {
+            $links = [];
+            foreach (($doc['downloadable_links'] ?? []) as $data) {
+                if (!is_array($data) || empty($data['link_id'])) {
+                    continue;
+                }
+                $link = $this->downloadableLinkFactory->create();
+                $link->setData($data);
+                $link->setId((int) $data['link_id']);
+                $link->setProduct($product);
+                $links[$link->getId()] = $link;
+            }
+
+            $samples = [];
+            foreach (($doc['downloadable_samples'] ?? []) as $data) {
+                if (!is_array($data) || empty($data['sample_id'])) {
+                    continue;
+                }
+                $sample = $this->downloadableSampleFactory->create();
+                $sample->setData($data);
+                $sample->setId((int) $data['sample_id']);
+                $samples[$sample->getId()] = $sample;
+            }
+
+            // ShellNoEavProduct::getData() reads the OS doc BEFORE _data, so the raw
+            // link/sample arrays would shadow the hydrated models. Drop them from the doc
+            // and re-store it, then write the Link/Sample models to _data — now visible to
+            // native getLinks()/getSamples(), which return early instead of hitting the DB.
+            unset($doc['downloadable_links'], $doc['downloadable_samples']);
+            $product->setOsDoc($doc);
+            $product->setDownloadableLinks($links);
+            $product->setDownloadableSamples($samples);
+        } catch (\Throwable $e) {
+            // Leave downloadable data unset → native DB fallback renders correctly.
+        }
     }
 
     /**
