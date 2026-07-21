@@ -801,6 +801,13 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
 
         // ONE batch stock query for all children (replaces getStockItem() per child).
         $stockMap = $this->getStockMap($childIds);
+        // ONE batch catalog-rule-price + tier-price query for ALL children, so each child
+        // shell serves them from its OS doc. Without this the configurable PDP price path
+        // (ConfigurablePriceResolver → LowestPriceOptionsProvider → per-child BasePrice)
+        // fires one catalogrule_product_price + one catalog_product_entity_tier_price query
+        // PER child — the ~660-pair N+1 on a big configurable.
+        $ruleMap = $this->getChildRulePrices($childIds);
+        $tierMap = $this->getChildTierPrices($childIds);
         // Children inherit the parent's store scope; compute once (avoids getStoreIds() per child).
         $parentStoreId  = $product->getStoreId();
         $parentStoreIds = $product->getStoreIds();
@@ -820,6 +827,11 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
                 'image' => $child->getImage() ?? '',
                 'small_image' => $child->getSmallImage() ?? '',
                 'thumbnail' => $child->getThumbnail() ?? '',
+                // Serve catalog-rule/tier price from the doc. Always set both keys (even empty)
+                // so the shell's price models short-circuit instead of falling through to SQL:
+                // a missing key means "not indexed" → native DB fallback (the N+1 we're killing).
+                'catalog_rule_price' => isset($ruleMap[$cid]) ? ['rule_price' => (float)$ruleMap[$cid]] : [],
+                'tier_prices' => $tierMap[$cid] ?? [],
                 'custom_attributes' => $this->getCustomAttributesArray($child, $configurableOptions),
                 'store_id' => $parentStoreId,
                 'store_ids' => $parentStoreIds,
@@ -852,6 +864,62 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
             $map[(int)$row['product_id']] = [
                 'qty' => (float)$row['qty'],
                 'is_in_stock' => (bool)$row['is_in_stock'],
+            ];
+        }
+        return $map;
+    }
+
+    /**
+     * Batch catalog-rule prices for a set of product ids — one query (getRulePrices) instead
+     * of one getRulePrice() per child at price-calc time. Website 1 / customer group 0 mirror
+     * the parent's getCatalogRulePrice() scope.
+     *
+     * @param int[] $productIds
+     * @return array<int, float> product_id => rule_price (only ids that have a rule)
+     */
+    private function getChildRulePrices(array $productIds): array
+    {
+        if (!$productIds) {
+            return [];
+        }
+        try {
+            return $this->catalogRuleResource->getRulePrices(new \DateTime(), 1, 0, $productIds);
+        } catch (\Throwable $e) {
+            return [];
+        }
+    }
+
+    /**
+     * Batch tier prices for a set of product ids — one query on catalog_product_entity_tier_price
+     * instead of a per-child backend loadPriceData(). Emitted in the same shape the parent uses
+     * ({customer_group_id, qty, value}) so the shell serves them from its doc. Scoped to website 0
+     * (all-websites) + the default website (1); all_groups rows collapse to the ALL group id.
+     *
+     * @param int[] $productIds
+     * @return array<int, array<int, array{customer_group_id:int,qty:float,value:float}>>
+     */
+    private function getChildTierPrices(array $productIds): array
+    {
+        if (!$productIds) {
+            return [];
+        }
+        $connection = $this->productCollectionFactory->create()->getConnection();
+        $select = $connection->select()
+            ->from(
+                $connection->getTableName('catalog_product_entity_tier_price'),
+                ['entity_id', 'all_groups', 'customer_group_id', 'qty', 'value']
+            )
+            ->where('entity_id IN (?)', $productIds)
+            ->where('website_id IN (?)', [0, 1]);
+
+        $map = [];
+        foreach ($connection->fetchAll($select) as $row) {
+            $map[(int)$row['entity_id']][] = [
+                'customer_group_id' => (int)$row['all_groups'] === 1
+                    ? \Magento\Customer\Model\Group::CUST_GROUP_ALL
+                    : (int)$row['customer_group_id'],
+                'qty'   => (float)$row['qty'],
+                'value' => (float)$row['value'],
             ];
         }
         return $map;

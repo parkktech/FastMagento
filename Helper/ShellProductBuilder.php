@@ -307,6 +307,14 @@ class ShellProductBuilder
         if (!empty($doc['tier_prices'])) {
             $product->setData('tier_prices', $doc['tier_prices']);
         }
+        // Core TierPrice::getStoredTierPrices() reads getData('tier_price') (the singular
+        // attribute code) and, when it isn't an array, calls the tier-price attribute
+        // backend's afterLoad() — one catalog_product_entity_tier_price query per product.
+        // Across a configurable's children (isTierPriceApplicable / hasSpecialPrice iterate
+        // them) that is the ~660-query tier N+1. Always seed 'tier_price' with the indexed
+        // rows mapped to the native shape (empty array when none), so getStoredTierPrices
+        // short-circuits and never touches the DB.
+        $product->setData('tier_price', $this->mapTierPricesToNative($doc['tier_prices'] ?? []));
 
 // ✅ Set Catalog Rule Prices
         if (!empty($doc['catalog_rule_price'])) {
@@ -387,7 +395,7 @@ class ShellProductBuilder
         $handledKeys = [
             'entity_id', 'sku', 'name', 'store_id', 'website_ids', 'type_id',
             'price', 'final_price', 'special_price', 'stock_data', 'configurable_options',
-            'tier_prices', 'catalog_rule_price', 'category_names', 'media_gallery',
+            'tier_prices', 'tier_price', 'catalog_rule_price', 'category_names', 'media_gallery',
             'attributes', 'child_products', 'status', 'visibility',
             'downloadable_links', 'downloadable_samples'
         ];
@@ -511,6 +519,37 @@ class ShellProductBuilder
         } catch (\Throwable $e) {
             // Leave downloadable data unset → native DB fallback renders correctly.
         }
+    }
+
+    /**
+     * Map indexed tier prices ({customer_group_id, qty, value}) to the native `tier_price`
+     * attribute shape core's TierPrice price model consumes (price_qty / website_price /
+     * price / cust_group / all_groups). Returns [] when there are none, which is enough for
+     * getStoredTierPrices() to short-circuit without a DB load.
+     *
+     * @param array<int, array<string, mixed>> $tierPrices
+     * @return array<int, array<string, mixed>>
+     */
+    private function mapTierPricesToNative(array $tierPrices): array
+    {
+        $allGroupsId = \Magento\Customer\Model\Group::CUST_GROUP_ALL;
+        $native = [];
+        foreach ($tierPrices as $tp) {
+            if (!is_array($tp)) {
+                continue;
+            }
+            $custGroup = (int)($tp['customer_group_id'] ?? $allGroupsId);
+            $value = (float)($tp['value'] ?? 0);
+            $native[] = [
+                'price_qty'     => (float)($tp['qty'] ?? 1),
+                'website_price' => $value,
+                'price'         => $value,
+                'cust_group'    => $custGroup,
+                'all_groups'    => $custGroup === $allGroupsId ? 1 : 0,
+                'website_id'    => 0,
+            ];
+        }
+        return $native;
     }
 
     /**

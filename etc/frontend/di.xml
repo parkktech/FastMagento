@@ -46,6 +46,16 @@
     <preference for="Magento\CatalogRule\Pricing\Price\CatalogRulePrice"
                 type="ParkkTech\FastMagento\Pricing\Price\CatalogRulePrice" />
 
+    <!-- ✅ Serve the configurable price resolver from OpenSearch child shells (carrying
+         indexed catalog-rule + tier price) instead of a native child collection. Kills the
+         per-child catalogrule_product_price + catalog_product_entity_tier_price N+1 on the
+         configurable PDP price path. -->
+    <type name="Magento\ConfigurableProduct\Pricing\Price\LowestPriceOptionsProvider">
+        <plugin name="fastmagento_lowest_price_options"
+                type="ParkkTech\FastMagento\Plugin\LowestPriceOptionsProviderPlugin"
+                sortOrder="10"/>
+    </type>
+
     <!-- ✅ Override Configurable::getParentIdsByChild() Only on Frontend -->
     <preference for="Magento\ConfigurableProduct\Model\ResourceModel\Product\Type\Configurable"
                 type="ParkkTech\FastMagento\Model\Configurable\ConfigurableProductType" />
@@ -95,6 +105,19 @@
     <!-- ✅ Override Magento’s Configurable Product Type -->
     <preference for="Magento\ConfigurableProduct\Model\Product\Type\Configurable"
                 type="ParkkTech\FastMagento\Model\Product\Type\Configurable" />
+
+    <!-- Disable core's used-products cache on the frontend. It serializes each child's
+         getData() and, on cache HIT, rebuilds children as NATIVE Product objects
+         (productFactory->create()->setData()) — stripping the OS shell type AND the doc's
+         indexed catalog_rule_price/tier_prices. Those native children then resolve their
+         catalog-rule + tier price from MySQL, one query each: the ~660-pair N+1 that
+         reappears on every cached configurable price render (isTierPriceApplicable /
+         hasSpecialPrice iterate getUsedProducts). Our getUsedProducts already serves the
+         children as shells from the per-request registry (no DB), so this cache is both
+         redundant and harmful. -->
+    <type name="Magento\ConfigurableProduct\Model\Product\Type\Configurable">
+        <plugin name="used_products_cache" disabled="true"/>
+    </type>
 
     <!-- ✅ Use OpenSearch for StockRegistry on the frontend -->
   <preference for="Magento\CatalogInventory\Api\StockRegistryInterface"

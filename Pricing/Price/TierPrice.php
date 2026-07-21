@@ -11,9 +11,15 @@ class TierPrice extends CoreTierPrice
     {
         $product = $this->getProduct();
 
-        // ✅ Use OpenSearch instead of SQL only for frontend products
+        // ✅ Serve tier prices from the indexed doc, NEVER from SQL. The indexer writes a
+        // `tier_prices` key on every shell (empty array when the product has none), so an
+        // empty result returns false — BasePrice then skips tier price for this product
+        // without touching catalog_product_entity_tier_price. Falling through to
+        // parent::getValue() (getStoredTierPrices → loadPriceData) per configurable child
+        // is the other half of the ~660-query PDP N+1.
         if ($product instanceof ShellNoEavProduct) {
-            return $product->getTierPrices();
+            $tierPrices = $product->getTierPrices();
+            return empty($tierPrices) ? false : $tierPrices;
         }
 
         return parent::getValue();
