@@ -13,4 +13,17 @@
             Rebuilds product data directly from EAV to OpenSearch (with incremental updates).
         </description>
     </indexer>
+    <indexer
+        id="fastmagento_category"
+        view_id="fastmagento_category"
+        class="ParkkTech\FastMagento\Model\Indexer\CategoryIndexer"
+        primary="fastmagento_category"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:noNamespaceSchemaLocation="urn:magento:framework:Indexer/etc/indexer.xsd"
+    >
+        <title translate="true">FastMagento Category</title>
+        <description translate="true">
+            Projects the category tree (structure, menu flags, url paths) from EAV to OpenSearch.
+        </description>
+    </indexer>
 </config>

@@ -31,4 +31,16 @@ class OpenSearchConfig extends AbstractHelper
 
         return $defaultPrefix . '_' . $customSuffix;
     }
+
+    /**
+     * ✅ Category serving index name (sibling of the product index).
+     * e.g. magento2_categories — same default prefix, admin-overridable suffix.
+     */
+    public function getCategoryIndexName(): string
+    {
+        $defaultPrefix = $this->scopeConfig->getValue('catalog/search/opensearch_index_prefix') ?? 'magento2';
+        $customSuffix = $this->scopeConfig->getValue('fastmagento/indexing/opensearch_category_index_prefix') ?? 'categories';
+
+        return $defaultPrefix . '_' . $customSuffix;
+    }
 }
