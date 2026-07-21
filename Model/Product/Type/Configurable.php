@@ -138,6 +138,49 @@ class Configurable extends CoreConfigurable
     }
 
     /**
+     * ✅ Resolve the child product for a super-attribute selection from the OpenSearch-
+     * hydrated children instead of getUsedProductCollection(). Core matches by running a DB
+     * used-product collection with addAttributeToFilter(); for a shell parent that collection
+     * yields nothing, so add-to-cart fails with "You need to choose options". Here we compare
+     * each requested option id against the child docs already in the registry and return the
+     * matched child (a cart-usable product via the repository). Falls back to core when the
+     * registry isn't populated (natively-loaded configurable).
+     *
+     * @param array<int,int|string> $attributesInfo attribute_id => option_id
+     * @param \Magento\Catalog\Model\Product $product
+     * @return \Magento\Catalog\Model\Product|null
+     */
+    public function getProductByAttributes($attributesInfo, $product)
+    {
+        if (is_array($attributesInfo) && !empty($attributesInfo) && $this->registry->registry('child_products')) {
+            $codeByAttributeId = [];
+            foreach ($this->getConfigurableAttributes($product) as $attribute) {
+                $productAttribute = $attribute->getProductAttribute();
+                if ($productAttribute) {
+                    $codeByAttributeId[(int) $attribute->getAttributeId()] = $productAttribute->getAttributeCode();
+                }
+            }
+
+            foreach ($this->getUsedProducts($product) as $child) {
+                $matched = true;
+                foreach ($attributesInfo as $attributeId => $optionId) {
+                    $code = $codeByAttributeId[(int) $attributeId] ?? null;
+                    if ($code === null || (string) $child->getData($code) !== (string) $optionId) {
+                        $matched = false;
+                        break;
+                    }
+                }
+                if ($matched && $child->getId()) {
+                    return $this->productRepository->getById((int) $child->getId());
+                }
+            }
+            return null;
+        }
+
+        return parent::getProductByAttributes($attributesInfo, $product);
+    }
+
+    /**
      * ✅ Get Used Child Products (Check Registry First, then Core Database)
      */
     public function getUsedProducts($configurableProduct, $requiredAttributeIds = null)
