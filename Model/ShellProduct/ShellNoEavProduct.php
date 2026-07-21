@@ -17,6 +17,7 @@ use Magento\Framework\Registry;
 use Magento\Framework\Api\ExtensionAttributesFactory;
 use Magento\Framework\Api\AttributeValueFactory;
 use Magento\Store\Model\StoreManagerInterface;
+use Magento\Store\Model\ScopeInterface;
 use Magento\Catalog\Model\Product\Url;
 use Magento\Catalog\Model\Product\Link;
 use Magento\Catalog\Model\Product\Configuration\Item\OptionFactory as ItemOptionFactory;
@@ -41,6 +42,7 @@ use Magento\Framework\Api\ExtensionAttribute\JoinProcessorInterface;
 use Magento\Catalog\Model\Product\Attribute\Backend\Media\EntryConverterPool;
 use Magento\UrlRewrite\Model\UrlFinderInterface;
 use Magento\Catalog\Model\ResourceModel\Category\CollectionFactory as CategoryCollectionFactory;
+use Magento\Framework\App\Config\ScopeConfigInterface;
 
 
 class ShellNoEavProduct extends CoreProduct
@@ -51,6 +53,8 @@ class ShellNoEavProduct extends CoreProduct
     protected ProductAttributeRepositoryInterface $productAttributeRepository;
     private $urlFinder;
     private $categoryCollectionFactory;
+    private $scopeConfig;
+    private ?string $cachedUrl = null;
 
     public function __construct(
         Context                             $context,
@@ -89,6 +93,7 @@ class ShellNoEavProduct extends CoreProduct
         JoinProcessorInterface              $joinProcessor,
         UrlFinderInterface $urlFinder,
         CategoryCollectionFactory $categoryCollectionFactory,
+        ScopeConfigInterface $scopeConfig,
         array                               $data = [],
         ?\Magento\Eav\Model\Config           $config = null,
         ?FilterProductCustomAttribute        $filterCustomAttribute = null
@@ -98,6 +103,7 @@ class ShellNoEavProduct extends CoreProduct
         $this->productAttributeRepository = $metadataService;
         $this->urlFinder = $urlFinder;
         $this->categoryCollectionFactory = $categoryCollectionFactory;
+        $this->scopeConfig = $scopeConfig;
         parent::__construct($context, $registry, $extensionFactory, $customAttributeFactory, $storeManager, $metadataService, $url, $productLink, $itemOptionFactory, $stockItemFactory, $catalogProductOptionFactory, $catalogProductVisibility, $catalogProductStatus, $catalogProductMediaConfig, $catalogProductType, $moduleManager, $catalogProduct, $resource, $resourceCollection, $collectionFactory, $filesystem, $indexerRegistry, $productFlatIndexerProcessor, $productPriceIndexerProcessor, $productEavIndexerProcessor, $categoryRepository, $imageCacheFactory, $entityCollectionProvider, $linkTypeProvider, $productLinkFactory, $productLinkExtensionFactory, $mediaGalleryEntryConverterPool, $dataObjectHelper, $joinProcessor);
     }
 
@@ -229,25 +235,49 @@ class ShellNoEavProduct extends CoreProduct
 
 public function getProductUrl($useSid = null)
 {
+    // Return cached URL if already resolved
+    if ($this->cachedUrl !== null) {
+        return $this->cachedUrl;
+    }
+
     $store = $this->_storeManager->getStore();
     $baseUrl = $store->getBaseUrl();
 
-    // Check if Magento is configured to include categories in product URLs
+    // Try to build URL from OpenSearch doc first (no DB query)
+    $urlPath = $this->doc['url_path'] ?? $this->doc['url_key'] ?? null;
+
+    if ($urlPath) {
+        // Get product URL suffix from config
+        $urlSuffix = $this->scopeConfig->getValue(
+            'catalog/seo/product_url_suffix',
+            ScopeInterface::SCOPE_STORE,
+            $store->getId()
+        ) ?? '';
+
+        // Build URL: baseUrl + urlPath + suffix
+        $this->cachedUrl = $baseUrl . $urlPath . $urlSuffix;
+        return $this->cachedUrl;
+    }
+
+    // Fallback: Check if Magento is configured to include categories in product URLs
     $includeCategory = $store->getConfig('catalog/seo/product_use_categories');
 
-    // Try to find the product's URL using Magento's URL Rewrite system
+    // Fall back to URL Rewrite system only when url_path is missing
     $requestPath = $this->getUrlRewrite($includeCategory);
 
     if ($requestPath) {
-        return $baseUrl . $requestPath;
+        $this->cachedUrl = $baseUrl . $requestPath;
+        return $this->cachedUrl;
     }
 
-    // Fallback: Generate basic URL if no rewrite exists
-    return $baseUrl . 'catalog/product/view/id/' . $this->getId();
+    // Last resort: Generate basic URL if no rewrite exists
+    $this->cachedUrl = $baseUrl . 'catalog/product/view/id/' . $this->getId();
+    return $this->cachedUrl;
 }
 
     /**
      * ✅ Fetch URL Rewrites for the Product (Category + Product URL)
+     * NOTE: This method is only called as a fallback when url_path is not available in OpenSearch doc.
      */
     private function getUrlRewrite(bool $includeCategory)
     {

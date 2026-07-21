@@ -6,11 +6,13 @@ use Magento\Elasticsearch\SearchAdapter\ConnectionManager;
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Store\Model\StoreManagerInterface;
 use Psr\Log\LoggerInterface;
+use ParkkTech\FastMagento\Helper\ShellProductBuilder;
 
 class Collection extends ProductCollection
 {
     private $connectionManager;
     private $scopeConfig;
+    private $shellProductBuilder;
 
     const XML_PATH_INDEX_PREFIX = 'catalog/search/elasticsearch_index_prefix';
 
@@ -29,6 +31,7 @@ class Collection extends ProductCollection
         \Magento\Catalog\Model\Indexer\Product\Flat\State $catalogProductFlatState,
         ScopeConfigInterface $scopeConfig,
         ConnectionManager $connectionManager, // 🔹 OpenSearch Connection
+        ShellProductBuilder $shellProductBuilder,
         ?\Magento\Framework\DB\Adapter\AdapterInterface $connection = null
     ) {
         parent::__construct(
@@ -59,6 +62,7 @@ class Collection extends ProductCollection
 
         $this->scopeConfig = $scopeConfig;
         $this->connectionManager = $connectionManager;
+        $this->shellProductBuilder = $shellProductBuilder;
     }
 
     public function _loadEntities($printQuery = false, $logQuery = false)
@@ -107,8 +111,9 @@ class Collection extends ProductCollection
         foreach ($response['hits']['hits'] as $hit) {
             $productData = $hit['_source'];
 
-            $product = $this->getNewEmptyItem();
-            $product->setData($productData);
+            // Build ShellNoEavProduct from OpenSearch doc instead of regular Product
+            // This allows us to skip url_rewrite DB lookups
+            $product = $this->shellProductBuilder->buildNoEavProductFromOsDoc($productData);
 
             $this->_items[$hit['_id']] = $product;
         }

@@ -269,6 +269,14 @@ schedule.
   website/customer-group/currency), **MSI salable-qty/reservations** stock, indexed
   URL (drop the `url_rewrite` per-call lookup).
 - **Multi-store**: index per store view + store-scoped reads (see §3.2).
+- **Index the URL, don't look it up.** Store the real `url_rewrite.request_path`
+  (per store view) in the doc so `getProductUrl()` returns it verbatim — zero
+  `url_rewrite` SQL AND correct for custom rewrites (building from `url_key`+suffix
+  alone breaks custom URLs). Baseline showed `url_rewrite` = 112 queries on a search
+  page; same lesson applies to category URLs (§2 Phase 2L: index category
+  request_path/name/tree per store so the menu/breadcrumbs/leftnav render from OS).
+- General rule proven by profiling: **whatever a page renders must be in the index**
+  (store-scoped) — then its DB queries go to zero.
 - Make `getResource()` safe so no code path silently falls back to MySQL.
 - Compatibility test suite: core + representative 3rd-party calls to standard
   `Product` methods return OS-sourced data unaware.
