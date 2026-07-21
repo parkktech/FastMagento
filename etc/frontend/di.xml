@@ -58,6 +58,15 @@
                 sortOrder="10"/>
     </type>
 
+    <!-- Frontend-only: drop deleted/disabled/hidden products from the bestsellers report so
+         storefront widgets never surface unshoppable products. Admin reports keep every row
+         (this plugin is scoped to the frontend area). -->
+    <type name="Magento\Sales\Model\ResourceModel\Report\Bestsellers\Collection">
+        <plugin name="fastmagento_bestsellers_frontend_filter"
+                type="ParkkTech\FastMagento\Plugin\BestsellersFrontendFilterPlugin"
+                sortOrder="10"/>
+    </type>
+
     <!-- ✅ Override Magento’s Configurable Product Type -->
     <preference for="Magento\ConfigurableProduct\Model\Product\Type\Configurable"
                 type="ParkkTech\FastMagento\Model\Product\Type\Configurable" />
