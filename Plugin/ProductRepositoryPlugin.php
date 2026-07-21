@@ -9,6 +9,7 @@ use Magento\Catalog\Api\ProductRepositoryInterface;
 use Magento\Framework\Exception\NoSuchEntityException;
 use ParkkTech\FastMagento\Helper\ShellProductBuilder;
 use ParkkTech\FastMagento\Helper\OpenSearchPdpFetcher;
+use ParkkTech\FastMagento\Model\Indexer\ProductIndexer;
 
 /**
  * A plugin that intercepts ProductRepository calls and converts
@@ -21,12 +22,14 @@ class ProductRepositoryPlugin
      * @param WriteLog $writeLog
      * @param ShellProductBuilder $shellProductBuilder
      * @param OpenSearchPdpFetcher $openSearchPdpFetcher
+     * @param ProductIndexer $productIndexer
      */
     public function __construct(
         private readonly State $state,
         private readonly WriteLog $writeLog,
         private readonly ShellProductBuilder $shellProductBuilder,
-        private readonly OpenSearchPdpFetcher $openSearchPdpFetcher
+        private readonly OpenSearchPdpFetcher $openSearchPdpFetcher,
+        private readonly ProductIndexer $productIndexer
     ) {
     }
 
@@ -48,8 +51,21 @@ class ProductRepositoryPlugin
 
         $doc = $this->openSearchPdpFetcher->fetchPdpById($productId);
         if (!$doc) {
-            $this->writeLog->writeErrorLog('Product With ID: ' . $productId . ' Does Not Exist in Open Search.');
-            throw new NoSuchEntityException(__('Product ID Does Not Exist'));
+            // Warm-on-miss (read-through, like a cache): product isn't in OpenSearch yet
+            // (mid-reindex / stale / never indexed). Load it natively once, PUSH it into
+            // OpenSearch, then serve FROM OpenSearch so the serving layer stays OS-only.
+            $native = $proceed($productId, $editMode, $storeId, $forceReload);
+            if ($native && $native->getId()) {
+                $this->productIndexer->indexProductObject($native);
+                $doc = $this->openSearchPdpFetcher->fetchPdpById($productId);
+            }
+            if (!$doc) {
+                // OpenSearch still unavailable (e.g. OS down) — degrade to native.
+                $this->writeLog->writeErrorLog(
+                    'Product ID ' . $productId . ' could not be warmed into OpenSearch; serving native.'
+                );
+                return $native ?? $proceed($productId, $editMode, $storeId, $forceReload);
+            }
         }
 
         return $this->shellProductBuilder->buildNoEavProductFromOsDoc($doc);

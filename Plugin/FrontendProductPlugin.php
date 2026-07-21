@@ -8,6 +8,7 @@ use ParkkTech\FastMagento\Helper\WriteLog;
 use ParkkTech\FastMagento\Helper\ShellProductBuilder;
 use Magento\Framework\Exception\NoSuchEntityException;
 use ParkkTech\FastMagento\Helper\OpenSearchPdpFetcher;
+use ParkkTech\FastMagento\Model\Indexer\ProductIndexer;
 use ParkkTech\FastMagento\Model\ShellProduct\ShellNoEavProduct;
 
 class FrontendProductPlugin
@@ -17,12 +18,14 @@ class FrontendProductPlugin
      * @param State $appState
      * @param ShellProductBuilder $shellProductBuilder
      * @param OpenSearchPdpFetcher $openSearchPdpFetcher
+     * @param ProductIndexer $productIndexer
      */
     public function __construct(
         private readonly WriteLog $writeLog,
         private readonly State $appState,
         private readonly ShellProductBuilder $shellProductBuilder,
-        private readonly OpenSearchPdpFetcher $openSearchPdpFetcher
+        private readonly OpenSearchPdpFetcher $openSearchPdpFetcher,
+        private readonly ProductIndexer $productIndexer
     ) {
     }
 
@@ -48,8 +51,23 @@ class FrontendProductPlugin
 
             $doc = $this->openSearchPdpFetcher->fetchPdpById($modelId);
             if (!$doc) {
-                $this->writeLog->writeErrorLog('Product With ID: ' . $modelId . ' Does Not Exist in Open Search.');
-                throw new NoSuchEntityException(__('Product ID Does Not Exist'));
+                // Warm-on-miss (read-through, like a cache): the product isn't in
+                // OpenSearch yet (mid-reindex / stale / never indexed). Load it natively
+                // once, PUSH it into OpenSearch, then serve it FROM OpenSearch — so the
+                // serving layer stays OS-only and the next request is a pure OS read.
+                $native = $proceed($modelId, $field);
+                if ($native && $native->getId()) {
+                    $this->productIndexer->indexProductObject($native);
+                    $doc = $this->openSearchPdpFetcher->fetchPdpById($modelId);
+                }
+                if (!$doc) {
+                    // OpenSearch still unavailable (e.g. OS down) — degrade to native so
+                    // the store is never harder-down than base Magento.
+                    $this->writeLog->writeErrorLog(
+                        'Product ID ' . $modelId . ' could not be warmed into OpenSearch; serving native.'
+                    );
+                    return $native ?? $proceed($modelId, $field);
+                }
             }
 
             return $this->shellProductBuilder->buildNoEavProductFromOsDoc($doc);

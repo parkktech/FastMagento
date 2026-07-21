@@ -175,8 +175,19 @@ class OpenSearchStockRegistry implements StockRegistryInterface
      */
     private function buildStockItemFromRegistry($product): StockItemInterface
     {
-        /** @var StockItemInterface $stockItem */
-        $stockItem = $this->stockItemRepository->get($product->getId());
+        // Resolve the stock item by PRODUCT id via the registry provider — NOT
+        // stockItemRepository->get(), which expects a stock_item_id (passing the product
+        // id threw "stock item <productId> wasn't found" from the Qtyincrements block).
+        // Prefer the stock item already hydrated from the OpenSearch doc (no DB) when present.
+        $stockItem = $product->getExtensionAttributes()
+            ? $product->getExtensionAttributes()->getStockItem()
+            : null;
+        if (!$stockItem instanceof StockItemInterface || !$stockItem->getItemId()) {
+            $stockItem = $this->stockRegistryProvider->getStockItem(
+                $product->getId(),
+                $this->stockConfiguration->getDefaultScopeId()
+            );
+        }
 
         // ✅ Simple Products: Use direct stock data
         if ($product->getTypeId() === $this->productType::TYPE_SIMPLE) {

@@ -123,6 +123,24 @@ class ShellNoEavProduct extends CoreProduct
         return $key !== '' && isset($this->doc[$key]) && null == $index ? $this->doc[$key] : parent::getData($key, $index);
     }
 
+    /**
+     * Guard: core blocks (e.g. Catalog\Block\Product\View\Attributes::getAdditionalData)
+     * iterate getAttributes() and call methods expecting a real AbstractAttribute. On the
+     * OS-hydrated product some attribute sets surface non-object entries, which throws a
+     * TypeError mid-render. Return only valid attribute objects so the contract holds.
+     *
+     * @param int|null $groupId
+     * @param bool $skipSuper
+     * @return \Magento\Eav\Model\Entity\Attribute\AbstractAttribute[]
+     */
+    public function getAttributes($groupId = null, $skipSuper = false)
+    {
+        return array_filter(
+            parent::getAttributes($groupId, $skipSuper),
+            static fn($attribute) => $attribute instanceof \Magento\Eav\Model\Entity\Attribute\AbstractAttribute
+        );
+    }
+
     public function getId()
     {
         return $this->doc['entity_id'] ?? parent::getId();
