@@ -30,8 +30,23 @@
 
                 <!-- ✅ New Setting: OpenSearch Index Prefix -->
                 <field id="opensearch_index_prefix" translate="label" type="text" sortOrder="30" showInDefault="1" showInWebsite="1" showInStore="1">
-                    <label>OpenSearch Index Prefix</label>
-                    <comment>Define the prefix for OpenSearch index. Default is "products".</comment>
+                    <label>Product Index Suffix</label>
+                    <comment>Suffix for the FastMagento product index (&lt;engine prefix&gt;_&lt;suffix&gt;). Default "products".</comment>
+                </field>
+
+                <field id="opensearch_category_index_prefix" translate="label" type="text" sortOrder="40" showInDefault="1" showInWebsite="1" showInStore="1">
+                    <label>Category Index Suffix</label>
+                    <comment>Suffix for the FastMagento category index. Default "categories".</comment>
+                </field>
+            </group>
+
+            <!-- Instant Search -->
+            <group id="search" translate="label" sortOrder="20" showInDefault="1" showInWebsite="1" showInStore="1">
+                <label>Instant Search</label>
+
+                <field id="facet_attributes" translate="label comment" type="text" sortOrder="10" showInDefault="1" showInWebsite="1" showInStore="1">
+                    <label>Facet Attributes</label>
+                    <comment>Comma-separated attribute codes to build search facets from (e.g. part_type,compatible_platforms). Must be filterable in the native search index. Category is always included.</comment>
                 </field>
             </group>
 

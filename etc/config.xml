@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:noNamespaceSchemaLocation="urn:magento:module:Magento_Store:etc/config.xsd">
+    <default>
+        <fastmagento>
+            <indexing>
+                <opensearch_index_prefix>products</opensearch_index_prefix>
+                <opensearch_category_index_prefix>categories</opensearch_category_index_prefix>
+            </indexing>
+            <search>
+                <facet_attributes></facet_attributes>
+            </search>
+        </fastmagento>
+    </default>
+</config>
