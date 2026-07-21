@@ -1,15 +1,14 @@
 <page xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
       xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/page_configuration.xsd">
 
-    <!-- Remove default product list that queries DB -->
-    <body>
-        <referenceBlock name="category.products.list" remove="true" />
-
-        <!-- Insert your custom block to fetch from <prefix>_plp index (or the same _pdp index if you want) -->
-        <referenceContainer name="content">
-            <block class="ParkkTech\FastMagento\Block\Product\ListProduct"
-                   name="fastmagento.product.list"
-                   template="ParkkTech_FastMagento::product/list.phtml"/>
-        </referenceContainer>
-    </body>
+    <!--
+      Category listing is served natively (MySQL) for now. The custom
+      Block\Product\ListProduct -> Model\Search\ProductSearch path injects the raw
+      AdvancedSearch ClientInterface (no DI preference -> "Cannot instantiate
+      interface" on category pages) and the block/template contract is incomplete.
+      Serving category listings from OpenSearch is Phase 2 (read path) / 2L (layered
+      nav) — see docs/OPENSEARCH-SERVING-LAYER-PLAN.md. Disabled to keep category
+      pages working until that lands.
+    -->
+    <body/>
 </page>
