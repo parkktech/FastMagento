@@ -97,7 +97,29 @@ native `catalog_product_index_eav`. Setup scripts: `docs/tools/create-fitment-at
    (OS-down fallback, zero-downtime alias reindex, reconciliation) / admin config /
    harden** — see plan §4. Not started.
 
-## Configurable read-path — DIAGNOSIS (item 3, in progress)
+## Configurable read-path — SWATCHES RENDER (item 3, Stage 1-2 DONE)
+Configurable PDP (`/keira-banded-underwire-bra-1.html`, id 4369) now renders the full
+swatch UI from OpenSearch: jsonConfig (color 15 opts / size 44 opts / 660 optionPrices)
++ jsonSwatchConfig + client-side swatch-renderer, box-tocart, **16 total SQL (0 product/
+EAV)**. Fixes (all committed):
+- `ShellProductBuilder::hydrateChildFromCustomAttributes()` — child shells map
+  custom_attributes (raw color/size option ids), status label→numeric, type_id, top-level
+  stock→salable, so getAllowProducts() sees enabled children with option values.
+- Composite parent salability derived from children (salable if any child in stock);
+  shadowing salable/is_in_stock keys stripped from the OS doc.
+- `ShellNoEavProduct::isSalable()` honours the OS 'salable' flag (was reading
+  doc['is_in_stock'] = false for composite parents); `Configurable::isSalable()` override
+  trusts the flag instead of getLinkedProductCollection() (product SQL / 0 for a shell).
+- **Data/ops:** had to rebuild cataloginventory_stock + catalog_product_price (14k
+  backlog) so MSI reports children salable (getUsedProducts' MSI after-plugin filters by
+  real stock). New configurable/grouped/bundle test products need these indexes current.
+- Test tool: `docs/tools/create-downloadable-test.php` (downloadable); configurable test
+  bed = HER-* bras (id 4369+).
+STILL TODO (Stage 3-4): add-to-cart with selected options (verify the shell add flow),
+out-of-stock-child greying (all children in stock now so untested), grouped/bundle types,
+and confirm price/image switching in a real browser (jsonConfig is correct; JS-rendered).
+
+## Configurable read-path — original DIAGNOSIS (resolved above)
 Configurable PDP (e.g. `/keira-banded-underwire-bra-1.html`, id 4369) renders 200 but shows
 **"unavailable"** — no swatches, no jsonConfig/spConfig, no price. The OS doc is COMPLETE:
 `configurable_options_4369` (2 super-attrs), `swatch_options` (attr 93/189),
