@@ -39,6 +39,10 @@ running this serving layer.
   - **Configurable** — swatch `jsonConfig`, per-option prices and swatch config are served
     from OpenSearch; the PDP renders the full swatch UI. Out-of-stock option combinations
     still render (greyed), matching Magento's default behaviour.
+- **Instant search + autocomplete** — an as-you-type header dropdown (product cards +
+  category suggestions) and a search results page whose facets, product grid and pagination
+  re-render live from OpenSearch with no page reload (Algolia-style). Endpoints:
+  `/fastmagento/search/suggest` and `/fastmagento/search/instant`.
 - **Real-time stock sync** — order placement, refunds/returns and MSI inventory-API writes
   reproject the affected products (and their configurable/grouped/bundle parents) into the
   index immediately, so quantity and in-stock status stay live.
@@ -158,18 +162,14 @@ curl -s "http://localhost:9200/magento2_products/_mapping?pretty"
 |---|---|---|
 | Simple / Virtual | ✅ served from OpenSearch | ✅ |
 | Downloadable | ✅ links + samples served | ✅ |
-| Configurable | ✅ swatches + jsonConfig served | ⚠️ see limitations |
+| Configurable | ✅ swatches + jsonConfig served | ✅ (option→child matched from OpenSearch) |
 | Grouped / Bundle | ✅ indexed | ⚠️ not yet fully exercised |
 
 ---
 
 ## Known limitations / roadmap
 
-- **Configurable add-to-cart** through the hydrated shell is not yet wired
-  (super-attribute → child matching in `getProductByAttributes`). Configurable PDPs render
-  fully, but the add-to-cart handoff still needs completion. Simple / virtual / downloadable
-  add and order normally.
-- Grouped and bundle read paths are indexed but not yet fully exercised.
+- Grouped and bundle read paths are indexed but not yet fully exercised for add-to-cart.
 - The serving index projects the **default store view**; per-store serving is tracked
   separately for multi-store setups.
 
