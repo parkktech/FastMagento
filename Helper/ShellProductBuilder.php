@@ -322,18 +322,53 @@ class ShellProductBuilder
             }
         }
 
+// ✅ Child docs (configurable/grouped/bundle members) carry their data under
+//    custom_attributes, with the super-attribute option ids kept raw (e.g. color=86,
+//    size=89). Map them so getAllowProducts() sees an ENABLED child and the
+//    configurable/swatch jsonConfig can match each child to its option + price.
+        if (!empty($doc['custom_attributes']) && is_array($doc['custom_attributes'])) {
+            $this->hydrateChildFromCustomAttributes($product, $doc);
+        }
+
 // ✅ Set Child Products
         if (!empty($doc['child_products']) && is_array($doc['child_products'])) {
             $product->setData('child_products', $doc['child_products']);
 
             $childProducts = [];
+            $anyChildInStock = false;
             foreach ($doc['child_products'] as $child) {
+                if (!empty($child['is_in_stock'])) {
+                    $anyChildInStock = true;
+                }
                 //Make recursive calls to this method to add all child products.
                 $childProducts[] = $this->buildNoEavProductFromOsDoc($child);
             }
 
             $this->registry->unregister('child_products');
             $this->registry->register('child_products', $childProducts);
+
+            // A composite parent (configurable/grouped/bundle) holds no stock of its own —
+            // its stock_item is is_in_stock=0. Without this the parent shell is is_salable=0,
+            // so AbstractType::isSalable() short-circuits to false BEFORE the type's
+            // child-based salability check runs and the PDP shows "unavailable" (options
+            // block never renders). Derive the parent's salability from its children.
+            // ShellNoEavProduct::getData() reads the OS doc BEFORE _data, so the doc's
+            // is_salable/is_in_stock would shadow these writes — strip them from the doc.
+            if ($anyChildInStock) {
+                // 'salable' is the key Product::isSalable() actually reads; 'is_salable'
+                // feeds AbstractType::isSalable(). Set both, and strip every stock/salable
+                // key from the doc so ShellNoEavProduct::getData() (doc-first) can't shadow.
+                unset(
+                    $doc['salable'],
+                    $doc['is_salable'],
+                    $doc['is_in_stock'],
+                    $doc['quantity_and_stock_status']
+                );
+                $product->setOsDoc($doc);
+                $product->setData('salable', true);
+                $product->setData('is_salable', true);
+                $product->setData('is_in_stock', true);
+            }
         }
 
 // ✅ Loop Through Remaining Keys and Set Any Unhandled Values
@@ -379,6 +414,54 @@ class ShellProductBuilder
      *
      * @param array<string, mixed> $doc
      */
+    /**
+     * Hydrate a configurable/grouped/bundle CHILD shell from its custom_attributes map.
+     *
+     * The indexer projects children as {price, is_in_stock, stock_qty, custom_attributes:{
+     * type_id, status(label), color, size, ...}}. The parent read path reads type_id/status
+     * top-level and stock from extension_attributes, so without this a child shell has no
+     * type, is not ENABLED, and its super-attribute values are unset — getAllowProducts()
+     * then drops it and the PDP shows "unavailable". Here we map type_id, resolve the status
+     * label to Magento's numeric status, wire top-level stock to salable, and copy the raw
+     * attribute values (incl. the super-attribute option ids the jsonConfig matches on).
+     *
+     * @param array<string, mixed> $doc
+     */
+    private function hydrateChildFromCustomAttributes(ShellNoEavProduct $product, array $doc): void
+    {
+        $ca = $doc['custom_attributes'];
+
+        if (!empty($ca['type_id'])) {
+            $product->setTypeId((string) $ca['type_id']);
+        }
+
+        // Status is indexed as its label ("Enabled"/"Disabled"); getAllowProducts() compares
+        // the NUMERIC status, so map it back.
+        $disabled = isset($ca['status']) && strcasecmp((string) $ca['status'], 'Disabled') === 0;
+        $product->setStatus(
+            $disabled
+                ? \Magento\Catalog\Model\Product\Attribute\Source\Status::STATUS_DISABLED
+                : \Magento\Catalog\Model\Product\Attribute\Source\Status::STATUS_ENABLED
+        );
+
+        // Copy raw attribute values (super-attributes like color/size stay as option ids).
+        // Skip the label-resolved system attrs whose labels would break strict getters.
+        $skip = ['status', 'visibility', 'tax_class_id', 'quantity_and_stock_status', 'type_id'];
+        foreach ($ca as $code => $value) {
+            if (in_array($code, $skip, true)) {
+                continue;
+            }
+            if (!$product->hasData($code)) {
+                $product->setData($code, $value);
+            }
+        }
+
+        // Stock: children carry is_in_stock/stock_qty top-level (no extension_attributes).
+        $inStock = !empty($doc['is_in_stock']) && (float) ($doc['stock_qty'] ?? 0) > 0;
+        $product->setData('is_salable', $inStock);
+        $product->setData('is_in_stock', $inStock);
+    }
+
     private function hydrateDownloadable(ShellNoEavProduct $product, array $doc): void
     {
         try {

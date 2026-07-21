@@ -229,6 +229,13 @@ class ShellNoEavProduct extends CoreProduct
 
     public function isSalable()
     {
+        // ShellProductBuilder resolves salability from OpenSearch into the 'salable' flag
+        // (a composite parent is salable when any child is in stock; a simple/child
+        // reflects its own indexed stock). Honour it, and skip core Product::isSalable()'s
+        // 'salable'-cache/getOrigData dance which is unreliable for a never-DB-loaded shell.
+        if ($this->hasData('salable')) {
+            return (bool) $this->getData('salable');
+        }
         return !empty($this->doc['is_in_stock']) && $this->doc['is_in_stock'] === true;
     }
 

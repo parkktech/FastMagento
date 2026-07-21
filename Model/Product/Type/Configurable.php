@@ -116,6 +116,28 @@ class Configurable extends CoreConfigurable
     }
 
     /**
+     * ✅ Salability from the OpenSearch-derived data instead of a DB linked-product
+     * collection. Core Configurable::isSalable() runs getLinkedProductCollection() +
+     * salableProcessor (product SQL) and, for an OS-hydrated shell whose store/link-field
+     * differ from a native load, returns 0 → the PDP shows "unavailable" and the options
+     * block never renders. The ShellProductBuilder already sets is_salable on the parent
+     * from its children's stock, so honour that flag; only fall back to core when it is
+     * absent (e.g. a natively-loaded configurable that never went through the shell).
+     *
+     * @param \Magento\Catalog\Model\Product $product
+     * @return bool
+     */
+    public function isSalable($product)
+    {
+        if ($product->hasData('is_salable')) {
+            return (bool) $product->getData('is_salable')
+                && (int) $product->getStatus() === \Magento\Catalog\Model\Product\Attribute\Source\Status::STATUS_ENABLED;
+        }
+
+        return parent::isSalable($product);
+    }
+
+    /**
      * ✅ Get Used Child Products (Check Registry First, then Core Database)
      */
     public function getUsedProducts($configurableProduct, $requiredAttributeIds = null)
