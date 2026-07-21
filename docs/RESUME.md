@@ -97,6 +97,29 @@ native `catalog_product_index_eav`. Setup scripts: `docs/tools/create-fitment-at
    (OS-down fallback, zero-downtime alias reindex, reconciliation) / admin config /
    harden** — see plan §4. Not started.
 
+## Configurable read-path — DIAGNOSIS (item 3, in progress)
+Configurable PDP (e.g. `/keira-banded-underwire-bra-1.html`, id 4369) renders 200 but shows
+**"unavailable"** — no swatches, no jsonConfig/spConfig, no price. The OS doc is COMPLETE:
+`configurable_options_4369` (2 super-attrs), `swatch_options` (attr 93/189),
+`child_products` (660 children with price/stock/images). The gap is the READ path:
+- `ProductIndexer::getChildProducts()` emits each child as {entity_id, sku, price,
+  final_price, special_price, is_in_stock, stock_qty, image(s), custom_attributes, store_*}.
+  The super-attribute values (`color=86`, `size=89`), `type_id=simple`, `status="Enabled"`
+  (LABEL not 1), `visibility` all live INSIDE `custom_attributes`.
+- `ShellProductBuilder::buildNoEavProductFromOsDoc()` (used recursively per child) reads
+  `status`/`type_id`/`visibility` TOP-LEVEL, stock from `extension_attributes.stock_item`,
+  and attrs from an `attributes` key — NONE of which match the child shape. So child shells
+  get no type_id, status not enabled, stock not wired → not salable, and their color/size
+  option values are never set as product data.
+- Result: `Configurable::getUsedProducts()` (reads registry `child_products`) returns shells
+  that `getAllowProducts()` filters out as non-salable → block renders nothing → "unavailable".
+**To finish:** (a) hydrate child shells correctly — map `custom_attributes` (incl super-attr
+option ids), resolve status label→1, wire top-level is_in_stock/stock_qty to salable, set
+type_id=simple; (b) verify `Swatches\Block\...\Configurable::getJsonConfig()` builds spConfig
+(optionPrices per child, swatch data from `swatch_options`, image switching); (c) fix shell
+`getSku()` null-SKU on the ProductRepository cache path; (d) add-to-cart with selected options;
+(e) confirm 0 product SQL. Biggest + most intricate of the remaining items.
+
 ## Known interim shortcuts to revisit
 - Category listing served natively (broken PLP block override disabled).
 - ProductRepository get()/getList() fall back to native (not OS-served yet).
