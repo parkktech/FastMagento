@@ -49,6 +49,11 @@ class ProductRepositoryPlugin
             return $proceed($productId, $editMode, $storeId, $forceReload);
         }
 
+        // Empty/zero id = no product to fetch; avoid a guaranteed OpenSearch miss.
+        if (empty($productId)) {
+            return $proceed($productId, $editMode, $storeId, $forceReload);
+        }
+
         $doc = $this->openSearchPdpFetcher->fetchPdpById($productId);
         if (!$doc) {
             // Warm-on-miss (read-through, like a cache): product isn't in OpenSearch yet

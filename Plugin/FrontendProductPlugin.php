@@ -49,6 +49,13 @@ class FrontendProductPlugin
                 return $proceed($modelId, $field);
             }
 
+            // Empty/zero id = a freshly instantiated product object (widgets, factories).
+            // Don't fire an OpenSearch lookup for id 0 — it always misses and, on pages
+            // like the homepage, produced hundreds of wasteful OS fetches + warm attempts.
+            if (empty($modelId)) {
+                return $proceed($modelId, $field);
+            }
+
             $doc = $this->openSearchPdpFetcher->fetchPdpById($modelId);
             if (!$doc) {
                 // Warm-on-miss (read-through, like a cache): the product isn't in
