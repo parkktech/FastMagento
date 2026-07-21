@@ -15,4 +15,17 @@
         </arguments>
     </type>
 
+    <!-- Real-time OpenSearch stock sync when MSI stock is written via the inventory API
+         (admin grid, imports, ERP/integration, bin/magento inventory:*). -->
+    <type name="Magento\InventoryApi\Api\SourceItemsSaveInterface">
+        <plugin name="fastmagento_source_items_save_sync"
+                type="ParkkTech\FastMagento\Plugin\Inventory\SourceItemsSyncPlugin"
+                sortOrder="100"/>
+    </type>
+    <type name="Magento\InventoryApi\Api\SourceItemsDeleteInterface">
+        <plugin name="fastmagento_source_items_delete_sync"
+                type="ParkkTech\FastMagento\Plugin\Inventory\SourceItemsSyncPlugin"
+                sortOrder="100"/>
+    </type>
+
 </config>

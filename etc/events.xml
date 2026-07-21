@@ -6,4 +6,14 @@
 <!--        <observer name="fastmagento_product_save" instance="ParkkTech\FastMagento\Observer\ProductSave" />-->
 <!--    </event>-->
 
+    <!-- Real-time OpenSearch stock sync: reproject affected products (+ parents) on order
+         placement and refund/return so qty + in-stock status stay live. -->
+    <event name="sales_order_place_after">
+        <observer name="fastmagento_reindex_on_order_place"
+                  instance="ParkkTech\FastMagento\Observer\ReindexOnOrderPlace"/>
+    </event>
+    <event name="sales_order_creditmemo_save_after">
+        <observer name="fastmagento_reindex_on_creditmemo"
+                  instance="ParkkTech\FastMagento\Observer\ReindexOnCreditmemo"/>
+    </event>
 </config>
