@@ -132,6 +132,28 @@ shell provides. **Net: collection-serving is a multi-layer feature (shell URLs �
 link/quote item shape), not an incremental patch.** Recommend a focused session, or building the
 list batch-URL layer next before retrying.
 
+## Progress (this initiative)
+
+- ✅ **request_path indexed** per store into product docs (`c0cdc9be`) + full reindex done.
+  ~1,400 individually-visible products carry it (the rest aren't individually visible → no
+  canonical URL). Stored in `_source` (not mapped — `dynamic:false`), read by the shell.
+- ✅ **Related / Up-sell / Cross-sell served from OpenSearch** (`b6b39d8f`). Verified in-browser
+  on multiple PDPs: correct name/price/image, clean SEO URLs (0 fallback), 0 product-entity SQL
+  for grid items, no url_rewrite cascade. `LinkProductCollectionPlugin` reads link ids from
+  `catalog_product_link` directly (the collection's `getAllIds()` runs unfiltered → returns all
+  ~14.6k products, so it's unusable) and sets `url_data_object` from `request_path`.
+- ⏳ **Cart / checkout quote items** — NOT done. Assessment: the core product-info load is ~60–80
+  queries; the bulk of the cart's ~1,780 / checkout's ~3,062 SQL is 3rd-party (marketplace) +
+  framework, NOT core product load. Swapping quote-item products to OS shells touches the revenue
+  path (tax, weight, custom options, configurable option rendering, order placement) and can't be
+  fully verified autonomously (real order placement w/ payment). **Risk/reward is poor for an
+  unsupervised change** — recommend doing this one supervised.
+- ⏳ **PLP** — needs OS-driven sort / pagination / layered-nav (the instant-search approach), a
+  real sub-project, not item hydration.
+- ⏳ **Configurable pricing N+1** — the 660-child price N+1 persists because the children used at
+  price-calc time are native (not shells); needs `getUsedProducts()` to return shells carrying
+  indexed rule/tier price. Contained, no revenue-path risk — good next autonomous target.
+
 ## RESUME.md corrections found during this audit
 - **Configurable add-to-cart is NOT broken** — `Model/Product/Type/Configurable::getProductByAttributes()`
   is implemented and matches OS `child_products` (RESUME "Stage 3 TODO" is stale).
