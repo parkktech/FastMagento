@@ -23,8 +23,28 @@ stops the build unless marked **NEEDS YOU**.
   product is rejected by `Catalog\Helper\Product::initProduct` (visibility/status or
   getById scope). In-progress via delegated agent. This is the crux of Phase 1.
 
+## DB-query baseline (via docs/tools/query-profile.sh) — the optimization worklist
+- **PDP `/605-jeh-001.html`: 16 total queries, 0 product/EAV/catalog.** Fully served
+  from OpenSearch — no product SQL, no redundant parallel DB load. ✅ (This is the
+  author's "PDP flawless" milestone.) The 16 are framework bootstrap: session ×9,
+  store ×3, etc. — normal Magento overhead, not product data.
+- **Search `/catalogsearch/result/?q=link`: 314 total, 236 product/EAV/catalog.** The
+  product *results* come from OS, but surrounding blocks still hit MySQL. Top offenders:
+  - `url_rewrite` ×112  ← biggest: product/category URL lookups → index URLs into OS,
+    make getProductUrl() use the indexed URL (Phase 1/2).
+  - `catalog_category_entity*` ×58 ← category menu + layered-nav tree → serve category
+    data from OS (Phase 2/2L).
+  - `eav_attribute`/`catalog_eav_attribute` ×14, `search_query` ×3, misc.
+  → This 236 is the concrete Phase 2/2L target: drive it toward 0.
+
+## Milestone reached this session
+Phase 0 (stabilize) done + committed: di:compile GREEN, plugin conflict resolved,
+indexer runs on base Magento (1383 docs), search-client converged to native resolver.
+Phase 1 PDP: renders fully from OpenSearch (0 product SQL). Site fully browsable
+(home/PDP/cart/search 200); product images synced + resized. Everything committed.
+
 ## Open questions (answer when back — NEEDS YOU)
-_(none yet)_
+_(none yet — no decisions have required you)_
 
 ## Deferred / risky items I did NOT auto-do
 _(none yet)_
