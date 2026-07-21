@@ -133,6 +133,40 @@ ALL four (incl. wholesale +15% group rule and 10% all-group rule).
    prerequisite before enabling the flag in prod.** The MSI stock decrement is still shell-
    independent (re-derived by SKU), so a stale doc mis-prices but cannot oversell.
 
+### WALL-CLOCK follow-up (2026-07-21) — query count ≠ latency
+Re-measured in **milliseconds** (not query count), warm median of 7, per operation
+(item-collection load + collectTotals). Query count was MISLEADING:
+
+| cart | native | OS-served | note |
+|------|--------|-----------|------|
+| downloadable (guest) | 20 ms | **19 ms** | marginally faster |
+| downloadable+virtual | 29 ms | **26 ms** | marginally faster |
+| configurable+dl+simple (guest) | 141 ms | 138 ms | parity (now excluded) |
+| configurable+simple (wholesale) | 134 ms | 132 ms | parity (now excluded) |
+
+**Key findings:**
+1. **OS-serving configurables was a ~2x LATENCY REGRESSION** (fewer queries, ~2x wall-clock):
+   ShellProductBuilder recursively builds the parent's ~660 child Product shells, which costs
+   far more CPU than the SQL saved. `getUsedProducts()` IS called on the cart parent, so the
+   children can't be skipped (skipping → uncached native N+1 = 2,700 ms). → **Configurables/
+   bundle/grouped now fall back to native** (isDocServable + a cheap pre-mget `getData
+   ('product_type')` skip that avoids even the OS round-trip).
+2. **The 660-child loop the owner flagged is Magento MSI, not our layer.** During checkData(),
+   `InventoryConfigurableProduct\...\UpdateLegacyStockStatusForConfigurableProduct::beforeSave`
+   → `StockStatusManagement::isAnyProductInStock([all 660 children])` recomputes the parent's
+   legacy stock status by scanning every child. Confirmed present in the NATIVE path too (not
+   our regression). It's a WRITE path (result saved) and only ~2 queries / a few ms — NOT the
+   dominant cost — so patching it (via the OS-known parent salability, à la
+   CompositeParentStockStatusPlugin) is a deferred, higher-risk item, not done.
+3. **The real configurable-cart cost is collectTotals (~110 ms, pure CPU** — 48 tiny queries),
+   inherent Magento totals machinery, largely product-type-independent to our layer.
+4. **Perf gotcha:** never call `$item->getProductType()` in the pre-mget guard — it lazy-loads
+   getProduct() and builds the configurable shell (+90 ms). Use `getData('product_type')`.
+
+Net: simple/virtual/downloadable carts (the real 95%-downloadable catalog) are OS-served and
+marginally-to-meaningfully faster (query cut is larger on prod infra with DB network latency);
+composite carts stay native with zero regression. Every commit still inert (flag default 0).
+
 Still owner-gated (step 5): real supervised order (guest + wholesale) — order-item conversion,
 stock decrement, no overselling — before enabling for real. Harnesses:
 `scratchpad/quote-measure.php` (SQL + per-item getters + totals), `quote-profile.php`

@@ -131,10 +131,19 @@ class Collection extends \Magento\Quote\Model\ResourceModel\Quote\Item\Collectio
                 return parent::_assignProducts();
             }
 
-            // Custom options are not hydrated into the shell yet (getOptions/getOptionById).
-            // A cart carrying them must stay 100% native so totals/price stay exact.
+            // Pre-fetch bail-outs, straight off the quote_item rows (no OS round-trip):
+            //  - Composite lines (configurable/bundle/grouped): MEASURED net latency LOSS —
+            //    the parent needs its ~660 children built/scanned, which costs far more than
+            //    the SQL it saves (~2x). Read the raw product_type off the row via
+            //    getData('product_type') — NOT getProductType(), which lazy-loads getProduct()
+            //    and itself builds the configurable shell (measured +90ms). isDocServable() is
+            //    the belt-and-suspenders guarantee if the row column is ever blank.
+            //  - Custom options (option_ids): not hydrated into the shell yet (getOptions/
+            //    getOptionById), so totals could drift — stay 100% native.
             foreach ($this as $item) {
-                if ($item->getOptionByCode('option_ids')) {
+                if (in_array((string) $item->getData('product_type'), ['configurable', 'bundle', 'grouped'], true)
+                    || $item->getOptionByCode('option_ids')
+                ) {
                     return parent::_assignProducts();
                 }
             }
@@ -262,8 +271,14 @@ class Collection extends \Magento\Quote\Model\ResourceModel\Quote\Item\Collectio
         if ($doc['type_id'] === 'downloadable' && empty($doc['downloadable_links'])) {
             return false;
         }
-        // Bundle/grouped cart hydration is not OS-proven yet → native.
-        if (in_array($doc['type_id'], ['bundle', 'grouped'], true)) {
+        // Composite products (configurable/grouped/bundle) → native. MEASURED: OS-serving a
+        // configurable is a ~2x LATENCY REGRESSION (the parent's ~660 child shells must be
+        // built — the cart path calls getUsedProducts() on the parent, so they can't be
+        // skipped without an uncached N+1 native reload). Native resolves the same children
+        // in ONE batched 660-SKU query, which beats 660 PHP object builds every time. Query
+        // count drops but wall-clock doubles; wall-clock is what checkout latency is. Simple/
+        // virtual/downloadable carts stay OS-served (neutral-to-faster, no child fan-out).
+        if (in_array($doc['type_id'], ['configurable', 'bundle', 'grouped'], true)) {
             return false;
         }
         return true;
