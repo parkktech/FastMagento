@@ -193,6 +193,31 @@ REST path, ×4-6 loads/checkout (bigger on prod infra with DB network latency).
 QuoteItemPlugin left frontend-only: the shell's group-correct getFinalPrice makes totals right
 in webapi without it (validated).
 
+### REMAINING GAPS after re-profiling (2026-07-21)
+Fair WARM (Redis primed = prod-representative) real data-query counts, downloadable cart:
+native **29 → OS 19 (-34%)**; dl+virtual 35 → 24 (-31%). Schema introspection (SHOW/DESCRIBE)
+warms to 0, so it doesn't inflate the steady state.
+
+FIXED here: **sku→id N+1** — MSI's PreloadCache called `OpenSearchStockRegistry::getStockItem
+BySku` once per cart line, each firing a fresh `catalog_product_entity WHERE sku=?`. Added a
+per-request sku→id cache (registry is a singleton) → collapses to one lookup per distinct sku.
+
+Of the OS-served ~19, the breakdown of what's LEFT (1-item cart):
+- **~10 = the MSI live-stock block** (AddStockItemsObserver bulk + PreloadCache + native
+  getStockItem/status/reservation). **INTENTIONAL** — kept native so a stale index can't
+  oversell. **This is the single biggest remaining lever (~50%).** Serving it from the indexed
+  `extension_attributes.stock_item` (StockSyncer keeps it live) is the next big speedup, but
+  it's the deferred correctness/risk call: pre-placement QuantityValidator would read OS stock;
+  the real decrement stays SKU-derived reservations at placement (still can't oversell), worst
+  case is a rare graceful rejection at the final step. OWNER DECISION — not done here.
+- ~2 catalog_product_entity: 1 = core `removeItemsWithAbsentProducts()->getAllIds()` existence
+  prune (private in core, spec chose to leave); ~1 misc.
+- ~1 catalogrule_product_price, ~1 downloadable_link, and necessary quote_item / quote_item_
+  option / tax_class / customer_group reads.
+
+Net: the cheap safe wins are captured; the remaining meaningful headroom is the MSI stock block,
+gated on the owner's no-oversell risk call.
+
 Still owner-gated (step 5): real supervised order (guest + wholesale) — order-item conversion,
 stock decrement, no overselling — before enabling for real. GraphQL uses the same group-stamp
 mechanism but wasn't exercised here (Luma store → webapi_rest is the live path). Harnesses:

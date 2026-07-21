@@ -35,6 +35,9 @@ class OpenSearchStockRegistry implements StockRegistryInterface
 
     private ProductType $productType;
 
+    /** @var array<string,int|null> per-request sku => entity_id cache (see resolveProductId) */
+    private array $skuIdCache = [];
+
     public function __construct(
         StoreManagerInterface $storeManager,
         StockConfigurationInterface $stockConfiguration,
@@ -152,10 +155,21 @@ class OpenSearchStockRegistry implements StockRegistryInterface
     }
 
 
+    /**
+     * Resolve a sku to its entity_id. This StockRegistry is a shared (singleton) instance, and
+     * MSI's PreloadCache observer calls the *BySku methods once per cart line on every quote
+     * load — each previously firing a fresh `catalog_product_entity WHERE sku=?` query. sku→id
+     * is immutable within a request, so cache it: collapses that per-line N+1 to one lookup per
+     * distinct sku (repeats across collectTotals recollects/observers become free).
+     */
     private function resolveProductId($productSku): ?int
     {
-        $product = $this->productFactory->create();
-        return $product->getIdBySku($productSku);
+        $key = (string) $productSku;
+        if (array_key_exists($key, $this->skuIdCache)) {
+            return $this->skuIdCache[$key];
+        }
+        $id = $this->productFactory->create()->getIdBySku($productSku);
+        return $this->skuIdCache[$key] = ($id !== false && $id !== null ? (int) $id : null);
     }
 
 
