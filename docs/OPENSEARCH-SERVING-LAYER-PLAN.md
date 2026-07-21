@@ -328,9 +328,22 @@ schedule.
 - Keep mview as a self-healing secondary; fix crontab (drop `ExistingCronJob`,
   schedule `Reindex`); make admin toggles functional or delete them.
 
-**Phase 4 — Product types**
-- Configurable (+ swatches), **downloadable** (links/samples — required here),
-  grouped, bundle.
+**Phase 4 — Product types (ALL must work)**
+Every type must index its type-specific data and hydrate a working shell product +
+PDP + add-to-cart. Per type:
+- **Simple** — baseline (works).
+- **Virtual** — like simple, no shipping (43 in catalog).
+- **Downloadable** — index/hydrate links + samples so the native downloadable blocks
+  render (remove the interim block-removal); handle links_purchased_separately (1/0).
+  Primary type here (1,317 products).
+- **Configurable** — index children + super-attributes + **swatches** (option
+  swatch_image/values); hydrate so options/gallery/price switching work.
+- **Grouped** — index associated products + qty; hydrate the grouped table/add-to-cart.
+- **Bundle** — index options/selections + dynamic price; hydrate bundle options.
+- **Test-product creation (required):** this catalog has NO configurable / grouped /
+  bundle products — create sample products of each missing type (fixtures or a setup
+  script) so every type path is actually exercised and regression-tested. Add each
+  type to the PDP-coverage survey + the query-profile gate (0 product SQL per type).
 
 **Phase 5 — Harden, verify, release**
 - Query-logger proof of zero MySQL on PDP/PLP/search; cache warmup; monitoring;

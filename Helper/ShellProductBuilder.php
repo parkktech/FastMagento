@@ -315,6 +315,7 @@ class ShellProductBuilder
 // ✅ Set All Other Custom Attributes Dynamically
         if (!empty($doc['attributes']) && is_array($doc['attributes'])) {
             foreach ($doc['attributes'] as $attributeCode => $value) {
+                $value = $this->normalizeAttributeValue($value);
                 $product->setData($attributeCode, $value);
             }
         }
@@ -359,6 +360,33 @@ class ShellProductBuilder
         $product->setPriceInfo($priceInfo);
 
         return $product;
+    }
+
+    /**
+     * Normalize attribute values from OpenSearch doc to match native Magento behavior.
+     * Single-element arrays become scalars, multi-element arrays are comma-joined.
+     *
+     * @param mixed $value
+     * @return mixed
+     */
+    private function normalizeAttributeValue($value)
+    {
+        if (!is_array($value)) {
+            return $value;
+        }
+
+        // Single-element array: extract the scalar
+        if (count($value) === 1) {
+            return reset($value);
+        }
+
+        // Multi-element array: join with commas (native multiselect behavior)
+        if (count($value) > 1) {
+            return implode(',', $value);
+        }
+
+        // Empty array: return empty string
+        return '';
     }
 
     /**

@@ -46,5 +46,21 @@ Phase 1 PDP: renders fully from OpenSearch (0 product SQL). Site fully browsable
 ## Open questions (answer when back — NEEDS YOU)
 _(none yet — no decisions have required you)_
 
+## Queued next (in order; after in-flight attribute-shape fix)
+1. **Attribute-shape hydration** (in progress) — shell returns native-scalar attribute
+   values so 3rd-party blocks (Jadog StructuredData) work → PDP coverage ~53% → ~100%.
+2. **Downloadable — proper hydration** (95% of catalog): index links/samples, hydrate
+   the downloadable type so native downloadable blocks render; REMOVE the interim
+   catalog_product_view.xml block-removal.
+3. **All product types + test products** (see plan Phase 4): create configurable /
+   grouped / bundle samples (none exist in this catalog) and support each type.
+4. **Category from OpenSearch** (Phase 2L): the search page's ~115 url_rewrite +
+   58 category queries are category-driven (menu/breadcrumbs/leftnav). Index category
+   name/request_path/tree per store.
+5. Index real `url_rewrite.request_path` per store (robust URL, handles custom rewrites).
+
 ## Deferred / risky items I did NOT auto-do
-_(none yet)_
+- Dead-code shave / 3-shell-class consolidation (Phase 0 tail) — deferred as risky to
+  do unsupervised; run `/srk:audit` + `/srk:shave` with review.
+- Write-path sync, resilience (OS-down fallback, alias reindex), admin config, layered
+  nav, instant-search UX — the large remaining phases; not started.
