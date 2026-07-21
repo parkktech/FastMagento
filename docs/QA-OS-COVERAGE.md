@@ -111,6 +111,27 @@ PLP, and cart/checkout quote items) is NOT safe until the enabling prerequisites
 Only after 1–3 should the collection `around load` interception be re-introduced. Doing it
 before is why the original author deferred it.
 
+### Update — `request_path` indexed; collection-serving has a SECOND blocker
+
+**Landed (prerequisite #1):** the indexer now writes the canonical `request_path` per store into
+each product doc (`ProductIndexer::getProductRequestPath()`), and `ShellProductBuilder` sets it on
+the shell (`setData('request_path', ...)`). Requires a **full reindex** to populate all docs
+(only the test set is populated so far). This is correct groundwork but delivers no standalone
+SQL win yet — because:
+
+**Second blocker found (re-attempt reverted):** re-introducing the link-collection plugin with
+`request_path`-carrying shells produced the SAME url_rewrite cascade (~2,700 `url_rewrite` +
+~2,680 `catalog_url_rewrite_product_category`) **and** a 500. Root cause: Magento's product-**list**
+blocks generate **category-aware** product URLs per grid item via the URL finder
+(`catalog_url_rewrite_product_category`), which ignores the shell's canonical `request_path`. The
+native list batches these via `Collection::addUrlRewrite($categoryId)` (one query, sets a
+`url_data_object` on each item). So serving link/list collections from OS shells also needs that
+batch URL-rewrite load replicated onto the shells (set `url_data_object`, not just `request_path`),
+and the 500 indicates the link collection expects more of its items (link attributes) than a bare
+shell provides. **Net: collection-serving is a multi-layer feature (shell URLs → list batch URLs →
+link/quote item shape), not an incremental patch.** Recommend a focused session, or building the
+list batch-URL layer next before retrying.
+
 ## RESUME.md corrections found during this audit
 - **Configurable add-to-cart is NOT broken** — `Model/Product/Type/Configurable::getProductByAttributes()`
   is implemented and matches OS `child_products` (RESUME "Stage 3 TODO" is stale).

@@ -411,6 +411,10 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
         $productData['created_at'] = $this->formatDateForOpenSearch($product->getCreatedAt());
         $productData['updated_at'] = $this->formatDateForOpenSearch($product->getUpdatedAt());
         $productData['category_names'] = $this->getCategoryNames($product);
+        // Canonical product request_path (from url_rewrite) so the shell serves grid/list URLs
+        // without falling into the dynamic url_rewrite storage — the N+1 that made a page of
+        // OS-served product cards explode into thousands of url_rewrite lookups.
+        $productData['request_path'] = $this->getProductRequestPath((int)$product->getId());
 
         $productData['is_in_stock'] = (bool)$product->getExtensionAttributes()?->getStockItem()?->getIsInStock();
         $productData['stock_data'] = [
@@ -640,6 +644,34 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
             return $label === null ? '' : (string)$label;
         } catch (\Throwable $e) {
             return '';
+        }
+    }
+
+    /**
+     * Canonical (category-independent) request_path for a product in the served store view.
+     * `metadata IS NULL` excludes the per-category rewrites; `redirect_type = 0` excludes 301/302
+     * rows. Returns null when no rewrite exists (shell then falls back to url_path).
+     */
+    private function getProductRequestPath(int $productId): ?string
+    {
+        if ($productId <= 0) {
+            return null;
+        }
+        try {
+            $connection = $this->productCollectionFactory->create()->getConnection();
+            $select = $connection->select()
+                ->from($connection->getTableName('url_rewrite'), ['request_path'])
+                ->where('entity_type = ?', 'product')
+                ->where('entity_id = ?', $productId)
+                ->where('store_id = ?', $this->getIndexStoreId())
+                ->where('metadata IS NULL')
+                ->where('redirect_type = ?', 0)
+                ->order('url_rewrite_id ASC')
+                ->limit(1);
+            $path = $connection->fetchOne($select);
+            return ($path !== false && $path !== '') ? (string)$path : null;
+        } catch (\Throwable $e) {
+            return null;
         }
     }
 

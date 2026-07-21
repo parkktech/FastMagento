@@ -105,6 +105,12 @@ class ShellProductBuilder
         $product->setStoreId($doc['store_id'] ?? 0);
         $product->setWebsiteIds($doc['website_ids'] ?? [0]);
 
+        // Indexed canonical request_path → Magento\Catalog\Model\Product\Url::getUrl() uses it
+        // directly and skips the url_rewrite DB finder (per-item URL N+1 on product grids/lists).
+        if (!empty($doc['request_path'])) {
+            $product->setData('request_path', $doc['request_path']);
+        }
+
         if (!empty($doc['type_id'])) {
             $product->setTypeId($doc['type_id']);
         }
@@ -207,6 +213,12 @@ class ShellProductBuilder
         $product->setName($doc['name'] ?? null);
         $product->setStoreId($doc['store_id'] ?? 0);
         $product->setWebsiteIds($doc['website_ids'] ?? [0]);
+
+        // Indexed canonical request_path → Magento\Catalog\Model\Product\Url::getUrl() uses it
+        // directly and skips the url_rewrite DB finder (per-item URL N+1 on product grids/lists).
+        if (!empty($doc['request_path'])) {
+            $product->setData('request_path', $doc['request_path']);
+        }
 
         if (!empty($doc['type_id'])) {
             $product->setTypeId($doc['type_id']);
