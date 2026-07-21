@@ -16,4 +16,9 @@
         <observer name="fastmagento_reindex_on_creditmemo"
                   instance="ParkkTech\FastMagento\Observer\ReindexOnCreditmemo"/>
     </event>
+    <!-- Remove deleted products from the OpenSearch serving index. -->
+    <event name="catalog_product_delete_after">
+        <observer name="fastmagento_remove_on_product_delete"
+                  instance="ParkkTech\FastMagento\Observer\RemoveOnProductDelete"/>
+    </event>
 </config>

@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace ParkkTech\FastMagento\Model\OpenSearch;
 
+use Magento\AdvancedSearch\Model\Client\ClientResolver;
 use Magento\Framework\App\ResourceConnection;
+use Magento\Framework\Search\EngineResolverInterface;
+use ParkkTech\FastMagento\Helper\OpenSearchConfig;
 use ParkkTech\FastMagento\Helper\WriteLog;
 use ParkkTech\FastMagento\Model\Indexer\ProductIndexer;
 
@@ -26,8 +29,36 @@ class StockSyncer
     public function __construct(
         private readonly ProductIndexer $productIndexer,
         private readonly ResourceConnection $resource,
-        private readonly WriteLog $writeLog
+        private readonly WriteLog $writeLog,
+        private readonly ClientResolver $clientResolver,
+        private readonly EngineResolverInterface $engineResolver,
+        private readonly OpenSearchConfig $openSearchConfig
     ) {
+    }
+
+    /**
+     * Remove a deleted product's doc (and reproject its parents) so the index never serves
+     * a stale product. Best-effort.
+     */
+    public function removeProduct(int $productId): void
+    {
+        if ($productId <= 0) {
+            return;
+        }
+        try {
+            $parents = $this->getParentIds([$productId]);
+            $client = $this->clientResolver->create($this->engineResolver->getCurrentSearchEngine());
+            $client->getOpenSearchClient()->delete([
+                'index' => $this->openSearchConfig->getIndexName(),
+                'id' => (string) $productId,
+                'client' => ['ignore' => [404]],
+            ]);
+            if ($parents) {
+                $this->productIndexer->executeList(array_values(array_unique($parents)));
+            }
+        } catch (\Throwable $e) {
+            $this->writeLog->writeErrorLog('[FastMagento] realtime delete sync failed: ' . $e->getMessage());
+        }
     }
 
     /**
