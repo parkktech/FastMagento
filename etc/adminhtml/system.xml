@@ -73,7 +73,17 @@
                     <source_model>ParkkTech\FastMagento\Model\Config\Source\RankingDirection</source_model>
                 </field>
 
-                <field id="facet_attributes" translate="label comment" type="text" sortOrder="60" showInDefault="1" showInWebsite="1" showInStore="1">
+                <field id="synonyms" translate="label comment" type="textarea" sortOrder="60" showInDefault="1" showInWebsite="1" showInStore="1">
+                    <label>Synonyms / Thesaurus</label>
+                    <comment><![CDATA[One equivalence group per line, comma-separated (e.g. <em>bra, brassiere, bralette</em>). A search for any term also matches the others. Pre-populated with common defaults; edit freely.]]></comment>
+                </field>
+
+                <field id="stopwords" translate="label comment" type="textarea" sortOrder="70" showInDefault="1" showInWebsite="1" showInStore="1">
+                    <label>Stop Words</label>
+                    <comment>Comma- or space-separated words ignored in queries (e.g. the, a, for, with). Pre-populated with common English stop words.</comment>
+                </field>
+
+                <field id="facet_attributes" translate="label comment" type="text" sortOrder="80" showInDefault="1" showInWebsite="1" showInStore="1">
                     <label>Facet Attributes</label>
                     <comment>Comma-separated attribute codes to build search facets from (e.g. part_type,compatible_platforms). Must be filterable in the native search index. Category is always included.</comment>
                 </field>

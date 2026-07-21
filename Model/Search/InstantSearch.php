@@ -114,17 +114,22 @@ class InstantSearch
      */
     private function buildQuery(string $query, array $filters): array
     {
-        // bool_prefix gives good as-you-type behaviour; field boosts come from the admin
-        // searchable-attributes weights (Algolia-style searchable attributes).
-        $matchClause = [
-            'query' => $query,
-            'type' => 'bool_prefix',
-            'fields' => $this->relevanceConfig->getBoostedFields(),
-        ];
+        $fields = $this->relevanceConfig->getBoostedFields();
+        $expanded = $this->expandQuery($query);
+
+        // Primary as-you-type clause (bool_prefix) on the stop-word-stripped query; field
+        // boosts come from the admin searchable-attributes weights.
+        $primary = ['query' => $expanded['clean'], 'type' => 'bool_prefix', 'fields' => $fields];
         if ($this->relevanceConfig->isTypoToleranceEnabled()) {
-            $matchClause['fuzziness'] = 'AUTO';
+            $primary['fuzziness'] = 'AUTO';
         }
-        $must = [['multi_match' => $matchClause]];
+        $should = [['multi_match' => $primary]];
+
+        // Thesaurus: each synonym variant is a lower-boosted alternative, so a product that
+        // only matches the synonym (e.g. "brassiere" for "bra") is still found.
+        foreach ($expanded['variants'] as $variant) {
+            $should[] = ['multi_match' => ['query' => $variant, 'type' => 'best_fields', 'fields' => $fields, 'boost' => 0.6]];
+        }
 
         $filterClauses = [];
         foreach ($filters as $field => $values) {
@@ -135,7 +140,7 @@ class InstantSearch
             $filterClauses[] = ['terms' => [$this->filterField($field) => $values]];
         }
 
-        $bool = ['must' => $must];
+        $bool = ['should' => $should, 'minimum_should_match' => 1];
         if ($filterClauses) {
             $bool['filter'] = $filterClauses;
         }
@@ -174,6 +179,41 @@ class InstantSearch
             '_score' => 'desc',
             [$attribute => ['order' => $this->relevanceConfig->getCustomRankingDirection(), 'missing' => '_last', 'unmapped_type' => 'float']],
         ];
+    }
+
+    /**
+     * Strip stop words and build synonym variants (one substitution at a time, capped).
+     *
+     * @return array{clean:string, variants:string[]}
+     */
+    private function expandQuery(string $query): array
+    {
+        $stop = $this->relevanceConfig->getStopwords();
+        $tokens = array_values(array_filter(
+            preg_split('/\s+/', trim(mb_strtolower($query))) ?: [],
+            static fn ($t) => $t !== ''
+        ));
+        $kept = array_values(array_filter($tokens, static fn ($t) => !in_array($t, $stop, true)));
+        $clean = $kept ? implode(' ', $kept) : trim($query);   // don't blank an all-stopword query
+
+        $variants = [];
+        foreach ($this->relevanceConfig->getSynonymGroups() as $group) {
+            foreach ($kept as $i => $token) {
+                if (!in_array($token, $group, true)) {
+                    continue;
+                }
+                foreach ($group as $syn) {
+                    if ($syn !== $token) {
+                        $swap = $kept;
+                        $swap[$i] = $syn;
+                        $variants[] = implode(' ', $swap);
+                    }
+                }
+            }
+        }
+        $variants = array_slice(array_values(array_unique($variants)), 0, 8);
+
+        return ['clean' => $clean, 'variants' => $variants];
     }
 
     /**

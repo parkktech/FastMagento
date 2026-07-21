@@ -9,6 +9,22 @@
             </indexing>
             <search>
                 <facet_attributes></facet_attributes>
+                <typo_tolerance>1</typo_tolerance>
+                <boost_in_stock>1</boost_in_stock>
+                <custom_ranking_direction>desc</custom_ranking_direction>
+                <stopwords>a, an, and, or, the, of, for, with, to, in, on, at, by, is, it, this, that, your, my</stopwords>
+                <synonyms>bra, brassiere, bralette
+helmet, lid, moto helmet
+tire, tyre, tires, tyres
+aluminum, aluminium, alu
+color, colour
+gray, grey
+mount, bracket, tab
+bolt, screw, fastener
+shock, damper, coilover
+2xl, xxl
+xl, extra large
+sm, small</synonyms>
             </search>
         </fastmagento>
     </default>

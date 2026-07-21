@@ -91,6 +91,40 @@ class RelevanceConfig
     }
 
     /**
+     * Stop words to strip from queries (lower-cased).
+     *
+     * @return string[]
+     */
+    public function getStopwords(): array
+    {
+        $raw = mb_strtolower((string) $this->value('stopwords'));
+        return array_values(array_unique(array_filter(array_map(
+            'trim',
+            preg_split('/[,\s]+/', $raw) ?: []
+        ))));
+    }
+
+    /**
+     * Synonym equivalence groups (each a list of interchangeable terms, lower-cased).
+     *
+     * @return string[][]
+     */
+    public function getSynonymGroups(): array
+    {
+        $groups = [];
+        foreach (preg_split('/\r\n|\r|\n/', (string) $this->value('synonyms')) ?: [] as $line) {
+            $terms = array_values(array_unique(array_filter(array_map(
+                'trim',
+                explode(',', mb_strtolower($line))
+            ))));
+            if (count($terms) >= 2) {
+                $groups[] = $terms;
+            }
+        }
+        return $groups;
+    }
+
+    /**
      * @return string[]
      */
     public function getFacetAttributes(): array
