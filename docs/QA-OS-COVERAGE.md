@@ -150,9 +150,36 @@ list batch-URL layer next before retrying.
   unsupervised change** — recommend doing this one supervised.
 - ⏳ **PLP** — needs OS-driven sort / pagination / layered-nav (the instant-search approach), a
   real sub-project, not item hydration.
-- ⏳ **Configurable pricing N+1** — the 660-child price N+1 persists because the children used at
-  price-calc time are native (not shells); needs `getUsedProducts()` to return shells carrying
-  indexed rule/tier price. Contained, no revenue-path risk — good next autonomous target.
+- ✅ **Configurable pricing N+1 — DONE** (`aa2e096c`). Cold PDP (FPC off) on the 660-child bra
+  **3,138 → 494 SQL**; `catalogrule_product_price` 660→**0** and `catalog_product_entity_tier_price`
+  661→**0**. The prompt's premise ("make getUsedProducts return shells") was necessary but NOT
+  sufficient — three separate native-child sources fed the price path, found via cold-render stack
+  traces:
+  1. **`ConfigurablePriceResolver` → `LowestPriceOptionsProvider::getProducts()`** builds its OWN
+     native child collection (`collectionFactory->create()->addIdFilter`), bypassing the registry.
+     Fixed with `Plugin/LowestPriceOptionsProviderPlugin` (around getProducts) returning the OS
+     child shells when the parent is a shell and the registry shells match its doc children.
+  2. **Core `UsedProductsCache` frontend plugin** (`ConfigurableProduct\Model\Plugin\Frontend\
+     UsedProductsCache`) was the real hidden villain: it serializes each child's `getData()` and on
+     cache **HIT** rebuilds children as **native** `productFactory->create()->setData()` objects —
+     stripping the shell type AND the indexed prices. So even though our `getUsedProducts()` returns
+     shells on the first (cache-miss) render, `TierPriceBox::isTierPriceApplicable` /
+     `FinalPriceBox::hasSpecialPrice` (both iterate getUsedProducts) got native children on every
+     subsequent render — which is exactly what the profiler's 2nd (warm) hit measures. **Disabled
+     the plugin on the frontend** (`used_products_cache` `disabled="true"`); our registry-backed
+     getUsedProducts is already a no-DB cache.
+  3. **`TierPrice::getStoredTierPrices()`** reads `getData('tier_price')` (singular attr code) and,
+     when it isn't an array, calls the tier-price backend `afterLoad()` = one
+     `catalog_product_entity_tier_price` query per product. Shells only had `tier_prices` (plural,
+     in the doc). Now `ShellProductBuilder` seeds the native `tier_price` key (mapped from the
+     indexed rows, `[]` when none) so it short-circuits.
+  Plus: index `catalog_rule_price` + `tier_prices` per child in `ProductIndexer::getChildProducts`
+  (batched — one `getRulePrices()` + one tier-price query for all children), and the CatalogRule/Tier
+  shell overrides now return the indexed value or `false`, never SQL. **Requires a reindex of
+  configurable parents** to populate the new child keys (20 done locally; run a full
+  `fastmagento_product` reindex on deploy). Option prices verified identical to the pre-change
+  baseline (no price-display regression); the pre-existing child `finalPrice=0` quirk in the swatch
+  jsonConfig predates this work (special_price=0 handling) — separate item.
 
 ## RESUME.md corrections found during this audit
 - **Configurable add-to-cart is NOT broken** — `Model/Product/Type/Configurable::getProductByAttributes()`
