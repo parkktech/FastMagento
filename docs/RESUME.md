@@ -16,6 +16,21 @@ and `docs/BLOCKERS.md` (decisions/queue). `git log --oneline` tells the story.
 home, PDP (served from OpenSearch — 0 product-data SQL, 30/30 sample), search, cart,
 category (native). Product images synced+resized. di:compile GREEN.
 
+## Indexer performance (the EAV bottleneck — scale work, task #13)
+Measured: old `ProductIndexer::execute()` fired **442 SQL queries/product** (4422 for
+10) via row-at-a-time full-model loads — ~3 full loads/product (redundant
+`factory->load()` + a `getById()` reload per store view), plus per-product
+`getOptionText()` (417 option queries/10 prod), media-gallery, MSI and a **1690-query
+`marketplace_userdata` 3rd-party tax (38% of all queries)**; docs accumulated in one
+array and bulk-flushed once at the very end (index empty for the whole run; OOM at
+scale); `executeFull()` delete+recreate = downtime.
+**Phase A done (shape-preserving, verified vs baseline docs):** single load/product +
+per-run option-label cache + streamed FLUSH_SIZE(200) bulk. → **86 q/product (5.2×),
+0.068s/product (2.8×)**, identical doc keys (unset selects now `['']` not `[false]`).
+**Phase B (todo for 10M):** fully set-based per-chunk extraction (batch maps for
+stock/tier/rule/parent/category) to kill the remaining per-product model load, optional
+module-owned covering indexes / projection table, alias-swap build. See task backlog.
+
 ## Test bed in place
 19 filterable attributes (all input types), 11 attribute sets with distinct
 compositions, values on all 1383 products, indexed at product level (OS doc) and

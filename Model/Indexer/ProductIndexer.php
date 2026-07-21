@@ -16,6 +16,7 @@ use Magento\Catalog\Api\ProductRepositoryInterface;
 use Magento\Framework\Exception\LocalizedException;
 use Magento\Bundle\Model\Product\Type as BundleType;
 use Magento\Framework\Search\EngineResolverInterface;
+use Magento\Store\Model\StoreManagerInterface;
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\GroupedProduct\Model\Product\Type\Grouped;
 use Magento\AdvancedSearch\Model\Client\ClientResolver;
@@ -28,6 +29,14 @@ use Magento\ConfigurableProduct\Model\ResourceModel\Product\Type\Configurable as
 
 class ProductIndexer implements ActionInterface, MviewActionInterface
 {
+    /**
+     * Bulk-flush chunk size. Docs are streamed to OpenSearch in chunks of this
+     * size so memory stays flat and the index fills incrementally instead of
+     * accumulating every doc in one array and flushing once at the very end
+     * (which OOMs at scale and leaves the index empty for the whole run).
+     */
+    private const FLUSH_SIZE = 200;
+
     private $clientResolver;
     private $engineResolver;
     private $productCollectionFactory;
@@ -41,6 +50,17 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
 
     private $openSearchConfig;
 
+    private $storeManager;
+
+    /**
+     * Per-run cache of attribute option labels: [attributeCode => [optionId => label]].
+     * Built once per attribute (a single getAllOptions() load) and reused for every
+     * product, instead of a getOptionText() DB round-trip per option per product.
+     *
+     * @var array<string, array<string, string>>
+     */
+    private array $optionLabelCache = [];
+
 
     public function __construct(
         ClientResolver $clientResolver,
@@ -53,6 +73,7 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
         SearchCriteriaBuilder $searchCriteriaBuilder,
         AttributeRepositoryInterface $attributeRepository,
         OpenSearchConfig $openSearchConfig,
+        StoreManagerInterface $storeManager,
         private ProductFactory $productFactory,
         private WriteLog $writeLog,
         private ProductRepositoryInterface $productRepository
@@ -67,7 +88,8 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
         $this->searchCriteriaBuilder = $searchCriteriaBuilder;
         $this->attributeRepository = $attributeRepository;
         $this->openSearchConfig = $openSearchConfig;
-            }
+        $this->storeManager = $storeManager;
+    }
 
     private function getDefaultMagentoAttributes(): array
     {
@@ -91,36 +113,21 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
     public function executeRow($id): void
     {
         try {
+            $id = (int)$id;
             /** @var Product $product */
-            $product = $this->productCollectionFactory->create()
-                ->addAttributeToSelect('*')
-                ->addFieldToFilter('entity_id', $id)
-                ->getFirstItem();
+            $product = $this->productRepository->getById($id, false, $this->getIndexStoreId(), false);
 
-            $productId = $product->getId();
-
-            if (!$product || !$productId) {
+            if (!$product->getId()) {
                 $this->writeLog->writeErrorLog("[FastMagento] Product ID $id not found.");
                 return;
             }
 
-            $productStoreIds = $product->getStoreIds();
-            if (empty($productStoreIds)) {
-                $this->writeLog->writeErrorLog('Product ID: ' . $productId . ' Has No Store IDs.');
-                return;
-            }
-
-            foreach ($productStoreIds as $storeId) {
-                /** @var Product $product */
-                $product = $this->productRepository->getById($productId, false, $storeId, false);
-
-                $productData = $this->prepareDoc($product);
-                $productData = $this->setExtensionAttributes($productData);
-                $doc = [
-                    'id' => $product->getId(),
-                    'body' => $productData
-                ];
-            }
+            $productData = $this->prepareDoc($product);
+            $productData = $this->setExtensionAttributes($productData);
+            $doc = [
+                'id' => (string)$product->getId(),
+                'body' => $productData
+            ];
 
             $indexName = $this->getIndexName();
             $client = $this->getSearchClient();
@@ -128,7 +135,7 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
             $this->bulkIndexNDJSON($client, $indexName, [$doc]);
 
             $this->writeLog->writeInfoLog("[FastMagento] Product ID $id reindexed successfully.");
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             $this->writeLog->writeErrorLog("[FastMagento] executeRow error: " . $e->getMessage());
         }
     }
@@ -137,55 +144,80 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
     {
         $indexName = $this->getIndexName();
         $client = $this->getSearchClient();
+        $storeId = $this->getIndexStoreId();
 
         if (empty($ids)) {
-            $collection = $this->productCollectionFactory->create();
-            $collection->addAttributeToSelect('entity_id');
-            foreach ($collection as $product) {
-                $ids[] = $product->getEntityId();
-            }
+            // Stream entity ids set-based; never materialise full products just to list ids.
+            $connection = $this->productCollectionFactory->create()->getConnection();
+            $ids = $connection->fetchCol(
+                $connection->select()
+                    ->from($this->productCollectionFactory->create()->getMainTable(), ['entity_id'])
+            );
         }
 
         $docs = [];
         foreach ($ids as $id) {
-            $productFactory = $this->productFactory->create();
-            $product = $productFactory->load($id);
-
-            $productId = $product->getId();
-
-            if (!$product || !$productId) {
+            $id = (int)$id;
+            try {
+                // ONE full load per product, scoped to the store we serve — instead of
+                // an initial factory->load() plus a getById() reload per store view
+                // (the old path did ~3 full EAV loads per product).
+                /** @var Product $product */
+                $product = $this->productRepository->getById($id, false, $storeId, false);
+            } catch (\Throwable $e) {
+                // Product missing/unloadable — skip, never abort the whole reindex.
+                $this->writeLog->writeErrorLog('Product ID: ' . $id . ' not loadable: ' . $e->getMessage());
                 continue;
             }
 
-            $productStoreIds = $product->getStoreIds();
-            if (empty($productStoreIds)) {
-                $this->writeLog->writeErrorLog('Product ID: ' . $productId . ' Has No Store IDs.');
+            if (!$product->getId()) {
                 continue;
             }
 
             try {
-                foreach ($productStoreIds as $storeId) {
-                    /** @var Product $product */
-                    $product = $this->productRepository->getById($productId, false, $storeId, false);
-
-                    $body = $this->prepareDoc($product);
-                    $body = $this->setExtensionAttributes($body);
-
-                    $docs[] = [
-                        'id' => (string)$product->getId(),
-                        'body' => $body
-                    ];
-                }
+                $body = $this->prepareDoc($product);
+                $body = $this->setExtensionAttributes($body);
+                $docs[] = [
+                    'id' => (string)$product->getId(),
+                    'body' => $body
+                ];
             } catch (\Throwable $e) {
                 // Never let one product's attribute/data quirk abort a full reindex.
                 $this->writeLog->writeErrorLog(
-                    'Product ID: ' . $productId . ' skipped during indexing: ' . $e->getMessage()
+                    'Product ID: ' . $id . ' skipped during indexing: ' . $e->getMessage()
                 );
                 continue;
             }
+
+            // Stream to OpenSearch in chunks: flat memory, incremental progress.
+            if (count($docs) >= self::FLUSH_SIZE) {
+                $this->bulkIndexNDJSON($client, $indexName, $docs);
+                $docs = [];
+            }
         }
 
-        $this->bulkIndexNDJSON($client, $indexName, $docs);
+        if ($docs) {
+            $this->bulkIndexNDJSON($client, $indexName, $docs);
+        }
+    }
+
+    /**
+     * Store view whose values are projected into the (single, global) serving index.
+     * The read path fetches docs by id with no store scope, so one doc per product is
+     * served; index the default frontend store view's values (matches what renders).
+     * Per-store indexing is tracked separately (multi-store scope).
+     */
+    private function getIndexStoreId(): int
+    {
+        try {
+            $store = $this->storeManager->getDefaultStoreView();
+            if ($store && (int)$store->getId() > 0) {
+                return (int)$store->getId();
+            }
+        } catch (\Throwable $e) {
+            // fall through to store 1
+        }
+        return 1;
     }
 
     private function setExtensionAttributes($body) {
@@ -425,7 +457,7 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
                 if (is_string($value) && strpos($value, ',') !== false) {
                     $optionIds = explode(',', $value);
                     foreach ($optionIds as $optionId) {
-                        $optionLabel = $source->getOptionText(trim($optionId));
+                        $optionLabel = $this->resolveOptionLabel($attributeCode, $source, trim($optionId));
                         if (!empty($optionLabel)) {
                             $optionLabels[] = (string)$optionLabel;
                         }
@@ -433,10 +465,7 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
                     $value = $optionLabels; // Store as an array
                 } else {
                     // Single-Select Attribute (Dropdown)
-                    $optionLabel = $source->getOptionText($value);
-                    if (is_object($optionLabel)) {
-                        $optionLabel = $optionLabel->getText();
-                    }
+                    $optionLabel = $this->resolveOptionLabel($attributeCode, $source, $value);
                     $value = [$optionLabel]; // Store as an array
                 }
             }
@@ -446,6 +475,61 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
         }
 
         return $attributes;
+    }
+
+    /**
+     * Resolve a select/multiselect option id to its label using a per-run cache.
+     *
+     * The label map for each attribute is built once (a single getAllOptions()
+     * load) and reused across every product, replacing the previous
+     * getOptionText()-per-option-per-product DB round-trips. Falls back to
+     * getOptionText() for ids the source doesn't enumerate (e.g. custom sources),
+     * so output labels stay identical to the old path.
+     *
+     * @param string $attributeCode
+     * @param \Magento\Eav\Model\Entity\Attribute\Source\SourceInterface $source
+     * @param mixed $optionId
+     * @return string
+     */
+    private function resolveOptionLabel(string $attributeCode, $source, $optionId): string
+    {
+        $optionId = (string)$optionId;
+        if ($optionId === '') {
+            return '';
+        }
+
+        if (!isset($this->optionLabelCache[$attributeCode])) {
+            $map = [];
+            try {
+                foreach ($source->getAllOptions() as $opt) {
+                    if (isset($opt['value']) && $opt['value'] !== '') {
+                        $label = $opt['label'];
+                        if (is_object($label)) {
+                            $label = $label->getText();
+                        }
+                        $map[(string)$opt['value']] = (string)$label;
+                    }
+                }
+            } catch (\Throwable $e) {
+                $map = [];
+            }
+            $this->optionLabelCache[$attributeCode] = $map;
+        }
+
+        if (array_key_exists($optionId, $this->optionLabelCache[$attributeCode])) {
+            return $this->optionLabelCache[$attributeCode][$optionId];
+        }
+
+        // Fallback: source that doesn't enumerate this id via getAllOptions().
+        try {
+            $label = $source->getOptionText($optionId);
+            if (is_object($label)) {
+                $label = $label->getText();
+            }
+            return $label === null ? '' : (string)$label;
+        } catch (\Throwable $e) {
+            return '';
+        }
     }
 
     private function getCategoryNames(\Magento\Catalog\Model\Product $product): array
