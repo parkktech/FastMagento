@@ -38,12 +38,31 @@ supervised test order** (owner places it): tax, totals, custom options, stock de
 placement — and confirm **no overselling** (stock accuracy at checkout) — before trusting it.
 Do NOT half-build this; it is checkout.
 
-## Secondary task — 2nd-configurable add-to-cart bug
-Adding a second configurable in one session (e.g. Matilda `5030`, child `4370` = color 86 /
-size 89) resolves the child correctly — `getProductByAttributes` matches after the per-parent
-registry fix (`child_products_<id>`, commit that made the registry per-parent) — but the item
-**never persists to the quote** (no error, no `quote_item` row). Root-cause the downstream
-failure. Single-configurable add works fine (4369 → 43.61 Wholesale).
+## Secondary task — 2nd-configurable add-to-cart bug — DONE (commit 2c6dc57b6)
+The handoff description ("silent, no error, no quote_item row, only the 2nd configurable")
+was inaccurate on every point. Real symptom: add-to-cart failed with **"This product is out
+of stock."** — reproducible even with an EMPTY cart, so not about being second. It was
+intrinsic to specific products: Matilda `5030` failed, Keira `4369` worked, purely because
+Matilda's configurable **parent** `cataloginventory_stock_status` index row was stale at `0`
+while all children were in stock (Keira's happened to be fresh `1`).
+- Root cause: a composite parent holds no stock of its own (salability = "any child in
+  stock"), maintained by the native/MSI stock-status mview which can lag. StockSyncer keeps
+  only the OS doc live, so the native parent row goes stale. `QuantityValidator` reads the
+  parent's `getStockStatus()` during add-to-cart and rejects on that coarse gate. MSI's
+  `AdaptGetStockStatusPlugin::afterGetStockStatus` recomputes it from MSI (which reflects the
+  stale legacy row here), so it's the authority actually read.
+- Fix: `Plugin/Inventory/CompositeParentStockStatusPlugin` — `afterGetStockStatus` on
+  `StockRegistryInterface` (frontend, sortOrder 100 → runs after MSI). For a composite parent
+  whose OS children are in the `child_products_<id>` registry, forces parent status in-stock
+  if any child is in stock (mirrors the PDP `Configurable::isSalable()` OS-trust). Registry-
+  only (no OS round-trip); simples/unresolved ids keep native status; only the coarse parent
+  gate is lifted (the purchased child is still validated natively) → cannot oversell.
+- Verified in-browser with the native index deliberately re-staled to 0: add succeeds +
+  persists, two configurables coexist in one cart, simple-with-native-OOS stays blocked.
+- Left as separate latent issues (not this fix): undefined `$registryKey` in
+  `Configurable::getUsedProducts()` native-fallback (throws on a 2nd null-key register);
+  `AddProductPlugin::getSelectedChildProduct` matches `attribute_<id>` instead of the attribute
+  code (only mis-applies the child catalog-rule price, not persistence).
 
 ## Notes / gotchas
 - Commit atomically; measure cold before/after; keep the README benchmark table current.
