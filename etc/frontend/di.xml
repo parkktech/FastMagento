@@ -24,6 +24,13 @@
                 sortOrder="10"/>
     </type>
 
+    <!-- ✅ Plugin: Serve Related / Up-sell / Cross-sell (product-link) collections from OpenSearch -->
+    <type name="Magento\Catalog\Model\ResourceModel\Product\Link\Product\Collection">
+        <plugin name="fastmagento_link_product_collection"
+                type="ParkkTech\FastMagento\Plugin\LinkProductCollectionPlugin"
+                sortOrder="10"/>
+    </type>
+
     <!-- ✅ Plugin: Use OpenSearch for Individual Product Retrieval (PDP, Cart, Checkout) -->
     <type name="Magento\Catalog\Model\Product">
         <plugin name="frontend_product_plugin"

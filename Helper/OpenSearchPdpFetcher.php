@@ -29,6 +29,38 @@ class OpenSearchPdpFetcher
     }
 
     /**
+     * Batch fetch docs by id (single mget). Returns [entity_id => _source] for docs found.
+     *
+     * @param int[] $ids
+     * @return array<int, array>
+     */
+    public function fetchByIds(array $ids): array
+    {
+        $ids = array_values(array_unique(array_filter(array_map('intval', $ids))));
+        $out = [];
+        if (!$ids) {
+            return $out;
+        }
+        try {
+            $engine = $this->engineResolver->getCurrentSearchEngine();
+            $searchClient = $this->clientResolver->create($engine);
+            $indexName = $this->productIndexer->getIndexName();
+            $resp = $searchClient->getOpenSearchClient()->mget([
+                'index' => $indexName,
+                'body' => ['ids' => array_map('strval', $ids)],
+            ]);
+            foreach ($resp['docs'] ?? [] as $doc) {
+                if (!empty($doc['found']) && isset($doc['_source'])) {
+                    $out[(int) $doc['_id']] = $doc['_source'];
+                }
+            }
+        } catch (\Exception $e) {
+            $this->logger->error('OpenSearchPdpFetcher mget error: ' . $e->getMessage());
+        }
+        return $out;
+    }
+
+    /**
      * Fetch doc by $id from the OS index. Return the _source or null if not found.
      */
     /**
