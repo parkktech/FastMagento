@@ -2,6 +2,10 @@
 <page xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
       xsi:noNamespaceSchemaLocation="urn:magento:framework/View/Layout/etc/page_configuration.xsd">
     <body>
+        <!-- On the results page, typing updates the whole page + facets live (instant
+             search), so suppress the autocomplete dropdown here — it is only for other
+             pages. -->
+        <referenceBlock name="fastmagento.autocomplete.init" remove="true"/>
         <!-- The instant-search grid renders its own facet sidebar, so drop the native
              layered navigation to avoid a duplicate filter column. -->
         <referenceBlock name="catalog.leftnav" remove="true"/>
