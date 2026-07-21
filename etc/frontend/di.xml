@@ -168,6 +168,15 @@
         <plugin name="inject_price_on_get_product" type="ParkkTech\FastMagento\Plugin\Quote\QuoteItemPlugin" />
     </type>
 
+    <!-- OS-serve the quote-item product load (cart/checkout) from OpenSearch shells instead
+         of the native ~217-SQL Product\Collection build. Overrides ONLY _assignProducts();
+         flag-gated (fastmagento/cart/os_serve_quote_items, default 0) and hard-native-fallback
+         for any missing/partial doc, custom-option cart, bundle/grouped, or non-frontend area —
+         so this is inert until enabled and can never half-serve a mixed cart. Frontend scope
+         only: admin order-create and webapi checkout keep the native collection entirely. -->
+    <preference for="Magento\Quote\Model\ResourceModel\Quote\Item\Collection"
+                type="ParkkTech\FastMagento\Model\ResourceModel\Quote\Item\Collection" />
+
     <!-- ✅ Override Magento's front-end Product View Controller -->
 <!--
     <preference for="Magento\Catalog\Controller\Product\View"

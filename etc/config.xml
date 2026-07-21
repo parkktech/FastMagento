@@ -49,6 +49,11 @@ xxxl, 3xl, triple xl</synonyms>
                 <claude_model>claude-opus-4-8</claude_model>
                 <max_terms>1200</max_terms>
             </ai>
+            <cart>
+                <!-- Default OFF: OS-serving the quote-item collection is checkout code; every
+                     commit stays inert until this is explicitly enabled in a store. -->
+                <os_serve_quote_items>0</os_serve_quote_items>
+            </cart>
         </fastmagento>
     </default>
 </config>

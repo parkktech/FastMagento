@@ -117,6 +117,17 @@
                 </field>
             </group>
 
+            <!-- Cart / Checkout Optimization -->
+            <group id="cart" translate="label" sortOrder="28" showInDefault="1" showInWebsite="1" showInStore="1">
+                <label>Cart / Checkout Optimization</label>
+
+                <field id="os_serve_quote_items" translate="label comment" type="select" sortOrder="10" showInDefault="1" showInWebsite="1" showInStore="1">
+                    <label>Serve Quote Items from OpenSearch</label>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <comment><![CDATA[Hydrate cart/checkout line products from the OpenSearch index instead of the native ~217-query product collection. Hard native fallback for any product missing/partial in the index, custom-option carts, and bundle/grouped products, so it never half-serves a cart. Live stock is still loaded natively (no overselling). <strong>Test on a real order before enabling in production.</strong>]]></comment>
+                </field>
+            </group>
+
             <!-- Cache Optimization -->
             <group id="cache" translate="label" sortOrder="30" showInDefault="1" showInWebsite="1" showInStore="1">
                 <label>Cache Optimization</label>
