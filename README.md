@@ -23,6 +23,69 @@ running this serving layer.
 
 ---
 
+## Benchmarks — with vs without the extension
+
+Measured on this storefront by toggling `ParkkTech_FastMagento` on and off and replaying the
+same requests. **Cold render** = Full-Page-Cache disabled — the real product-render path (an
+FPC *hit* renders no product blocks, so it hides the cost). Environment: local dev, **~14,600
+products**, **active catalog price rules across customer groups**, with Webkul Marketplace and
+other third-party modules running on every page.
+
+![Cold-render SQL queries — native Magento vs FastMagento](docs/img/benchmark-queries.svg)
+
+### SQL queries per cold render
+
+| Surface | Product type | Without (native) | With FastMagento | Reduction |
+|---|---|---:|---:|---:|
+| PDP | Simple | 822 | 540 | −34% |
+| PDP | Downloadable | 784 | 512 | −35% |
+| PDP | Configurable (660 variants) | 774 | 494 | −36% |
+| PLP | Category listing | 452 | 224 | −50% |
+| Search | Results page | 436 | **48** | **−89%** |
+| Cart / Checkout | Configurable + simple | 524 | 252 | −52% |
+
+### Cold render time (local dev)
+
+| Surface | Without (native) | With FastMagento |
+|---|---:|---:|
+| PDP · Simple | 0.49 s | 0.47 s |
+| PDP · Downloadable | 0.33 s | 0.42 s |
+| PDP · Configurable | 0.68 s | 0.75 s |
+| PLP · Category | 0.45 s | 0.44 s |
+| Search results | 0.73 s | 0.66 s |
+| Cart / Checkout | 1.16 s | 1.15 s |
+
+> **How to read this.** The **query-count reduction is the scale-invariant metric**; the
+> wall-clock column is close *only because this is local dev*, where MySQL answers each query in
+> ~0.1 ms — so dropping a few hundred queries saves tens of milliseconds, swamped by PHP and the
+> third-party modules on every page. The queries FastMagento removes are the **product / EAV /
+> catalog-rule** reads whose cost grows with catalog size and DB round-trip latency. On a
+> production store — millions of EAV rows, a networked/replicated database at 1–5 ms per query —
+> the *same* reduction is **seconds** of latency and a large drop in DB load. The design goal is
+> that **product/EAV SQL stays flat as the catalog grows**; the native path does not.
+
+### N+1 query patterns eliminated
+
+The patterns that make checkout and large-catalog pages fall over:
+
+- **Configurable price resolution.** Native Magento prices a configurable by iterating *every*
+  child (660 here) through the price model; on the serving-layer path this produced one
+  `catalogrule_product_price` **and** one `catalog_product_entity_tier_price` query *per child*.
+  Child prices (per customer group) are now served from the index → **0 rule/tier SQL** on the
+  configurable PDP.
+- **Cart / checkout reprojection.** Writing stock for a single configurable child reprojected
+  the whole parent inline, calling `getRulePrice()` once per child (~660 queries) on the revenue
+  path. The indexed base price is now rule-neutral (no per-child price observer) and reprojection
+  is **deferred off the response** and skipped when stock is unchanged → **671 → 8** catalog-rule
+  queries on a cart view, and the shopper never waits on the reindex.
+- **Search.** Relevance + layered-nav facets served from the index → **436 → 48** SQL.
+
+Catalog price rules are resolved **per customer group** (guest, Wholesale, Retailer, …) across
+PDP, PLP, cart and checkout, served from a per-group map in the index rather than a per-child
+SQL lookup.
+
+---
+
 ## Features
 
 - **Product serving** — PDP, PLP and search hydrate real product objects from OpenSearch

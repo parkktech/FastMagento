@@ -1,0 +1,57 @@
+<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 920 460' font-family='-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif'>
+<rect width='920' height='460' fill='#0f1115' rx='10'/>
+<text x='460' y='30' fill='#f4f6fa' font-size='20' font-weight='700' text-anchor='middle'>Cold-render SQL queries — native Magento vs FastMagento</text>
+<line x1='56' y1='364' x2='900' y2='364' stroke='#242a33' stroke-width='1'/>
+<text x='48' y='368' fill='#8a93a2' font-size='11' text-anchor='end'>0</text>
+<line x1='56' y1='312.33333333333' x2='900' y2='312.33333333333' stroke='#242a33' stroke-width='1'/>
+<text x='48' y='316.33333333333' fill='#8a93a2' font-size='11' text-anchor='end'>150</text>
+<line x1='56' y1='260.66666666667' x2='900' y2='260.66666666667' stroke='#242a33' stroke-width='1'/>
+<text x='48' y='264.66666666667' fill='#8a93a2' font-size='11' text-anchor='end'>300</text>
+<line x1='56' y1='209' x2='900' y2='209' stroke='#242a33' stroke-width='1'/>
+<text x='48' y='213' fill='#8a93a2' font-size='11' text-anchor='end'>450</text>
+<line x1='56' y1='157.33333333333' x2='900' y2='157.33333333333' stroke='#242a33' stroke-width='1'/>
+<text x='48' y='161.33333333333' fill='#8a93a2' font-size='11' text-anchor='end'>600</text>
+<line x1='56' y1='105.66666666667' x2='900' y2='105.66666666667' stroke='#242a33' stroke-width='1'/>
+<text x='48' y='109.66666666667' fill='#8a93a2' font-size='11' text-anchor='end'>750</text>
+<line x1='56' y1='54' x2='900' y2='54' stroke='#242a33' stroke-width='1'/>
+<text x='48' y='58' fill='#8a93a2' font-size='11' text-anchor='end'>900</text>
+<rect x='79.913333333333' y='80.866666666667' width='42.2' height='283.13333333333' fill='#e5533d' rx='3'/>
+<rect x='130.55333333333' y='178' width='42.2' height='186' fill='#3ec46d' rx='3'/>
+<text x='101.01333333333' y='74.866666666667' fill='#e88b7c' font-size='11' font-weight='600' text-anchor='middle'>822</text>
+<text x='151.65333333333' y='172' fill='#7fd99e' font-size='11' font-weight='600' text-anchor='middle'>540</text>
+<text x='126.33333333333' y='382' fill='#c3cad6' font-size='11.5' text-anchor='middle'>PDP · Simple</text>
+<text x='126.33333333333' y='399' fill='#3ec46d' font-size='11' font-weight='700' text-anchor='middle'>-34%</text>
+<rect x='220.58' y='93.955555555556' width='42.2' height='270.04444444444' fill='#e5533d' rx='3'/>
+<rect x='271.22' y='187.64444444444' width='42.2' height='176.35555555556' fill='#3ec46d' rx='3'/>
+<text x='241.68' y='87.955555555556' fill='#e88b7c' font-size='11' font-weight='600' text-anchor='middle'>784</text>
+<text x='292.32' y='181.64444444444' fill='#7fd99e' font-size='11' font-weight='600' text-anchor='middle'>512</text>
+<text x='267' y='382' fill='#c3cad6' font-size='11.5' text-anchor='middle'>PDP · Downloadable</text>
+<text x='267' y='399' fill='#3ec46d' font-size='11' font-weight='700' text-anchor='middle'>-35%</text>
+<rect x='361.24666666667' y='97.4' width='42.2' height='266.6' fill='#e5533d' rx='3'/>
+<rect x='411.88666666667' y='193.84444444444' width='42.2' height='170.15555555556' fill='#3ec46d' rx='3'/>
+<text x='382.34666666667' y='91.4' fill='#e88b7c' font-size='11' font-weight='600' text-anchor='middle'>774</text>
+<text x='432.98666666667' y='187.84444444444' fill='#7fd99e' font-size='11' font-weight='600' text-anchor='middle'>494</text>
+<text x='407.66666666667' y='382' fill='#c3cad6' font-size='11.5' text-anchor='middle'>PDP · Configurable</text>
+<text x='407.66666666667' y='399' fill='#3ec46d' font-size='11' font-weight='700' text-anchor='middle'>-36%</text>
+<rect x='501.91333333333' y='208.31111111111' width='42.2' height='155.68888888889' fill='#e5533d' rx='3'/>
+<rect x='552.55333333333' y='286.84444444444' width='42.2' height='77.155555555556' fill='#3ec46d' rx='3'/>
+<text x='523.01333333333' y='202.31111111111' fill='#e88b7c' font-size='11' font-weight='600' text-anchor='middle'>452</text>
+<text x='573.65333333333' y='280.84444444444' fill='#7fd99e' font-size='11' font-weight='600' text-anchor='middle'>224</text>
+<text x='548.33333333333' y='382' fill='#c3cad6' font-size='11.5' text-anchor='middle'>PLP (category)</text>
+<text x='548.33333333333' y='399' fill='#3ec46d' font-size='11' font-weight='700' text-anchor='middle'>-50%</text>
+<rect x='642.58' y='213.82222222222' width='42.2' height='150.17777777778' fill='#e5533d' rx='3'/>
+<rect x='693.22' y='347.46666666667' width='42.2' height='16.533333333333' fill='#3ec46d' rx='3'/>
+<text x='663.68' y='207.82222222222' fill='#e88b7c' font-size='11' font-weight='600' text-anchor='middle'>436</text>
+<text x='714.32' y='341.46666666667' fill='#7fd99e' font-size='11' font-weight='600' text-anchor='middle'>48</text>
+<text x='689' y='382' fill='#c3cad6' font-size='11.5' text-anchor='middle'>Search results</text>
+<text x='689' y='399' fill='#3ec46d' font-size='11' font-weight='700' text-anchor='middle'>-89%</text>
+<rect x='783.24666666667' y='183.51111111111' width='42.2' height='180.48888888889' fill='#e5533d' rx='3'/>
+<rect x='833.88666666667' y='277.2' width='42.2' height='86.8' fill='#3ec46d' rx='3'/>
+<text x='804.34666666667' y='177.51111111111' fill='#e88b7c' font-size='11' font-weight='600' text-anchor='middle'>524</text>
+<text x='854.98666666667' y='271.2' fill='#7fd99e' font-size='11' font-weight='600' text-anchor='middle'>252</text>
+<text x='829.66666666667' y='382' fill='#c3cad6' font-size='11.5' text-anchor='middle'>Cart / Checkout</text>
+<text x='829.66666666667' y='399' fill='#3ec46d' font-size='11' font-weight='700' text-anchor='middle'>-52%</text>
+<rect x='56' y='425' width='13' height='13' fill='#e5533d' rx='2'/><text x='75' y='436' fill='#c3cad6' font-size='12'>Without extension (native)</text>
+<rect x='271' y='425' width='13' height='13' fill='#3ec46d' rx='2'/><text x='290' y='436' fill='#c3cad6' font-size='12'>With FastMagento</text>
+<text x='900' y='436' fill='#5b6472' font-size='10.5' text-anchor='end'>cold render · FPC off · ~14,600 products · catalog rules active</text>
+</svg>
