@@ -220,6 +220,36 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
         return 1;
     }
 
+    /**
+     * Warm-on-miss (read-through): project an ALREADY-LOADED product straight into
+     * OpenSearch. Used by the frontend read-path fallback so a product that wasn't in
+     * the index (mid-reindex / stale / never indexed) is added on first access and the
+     * next request is served from OpenSearch — self-healing, like a cache miss.
+     *
+     * Takes the loaded product object directly (no reload) so it can't re-enter the
+     * frontend load fallback that called it.
+     */
+    public function indexProductObject(\Magento\Catalog\Model\Product $product): void
+    {
+        try {
+            if (!$product->getId()) {
+                return;
+            }
+            $body = $this->prepareDoc($product);
+            $body = $this->setExtensionAttributes($body);
+            $this->bulkIndexNDJSON(
+                $this->getSearchClient(),
+                $this->getIndexName(),
+                [['id' => (string)$product->getId(), 'body' => $body]]
+            );
+        } catch (\Throwable $e) {
+            // Never let a warm-on-miss write break the page it is serving.
+            $this->writeLog->writeErrorLog(
+                'Warm-on-miss index failed for product ' . $product->getId() . ': ' . $e->getMessage()
+            );
+        }
+    }
+
     private function setExtensionAttributes($body) {
         $extensionAttributes = isset($body['extension_attributes']) ? $body['extension_attributes'] : null;
         if (null !== $extensionAttributes && $extensionAttributes instanceof \Magento\Catalog\Api\Data\ProductExtension) {
@@ -405,6 +435,18 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
              }
 
              $productData[$configOptions] = $attributesData;
+
+             // Index the FULL swatch data so the PDP can render swatches + price/image
+             // switching entirely from OpenSearch (no product SQL on read). Map:
+             // [attribute_id => [option_id => {type, value, label}]] for every
+             // super-attribute option (type 1=visual color hex, 2=visual image, 0=text).
+             $superAttrIds = [];
+             foreach ($attributesData as $ad) {
+                 if (!empty($ad['attribute_id'])) {
+                     $superAttrIds[] = (int)$ad['attribute_id'];
+                 }
+             }
+             $productData['swatch_options'] = $this->getSwatchOptions($superAttrIds);
 
 //             $productData[$configOptions] = $product->getTypeInstance()->getConfigurableOptions($product);
          } else {
@@ -632,31 +674,86 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
         }
 
 
-        // ✅ Convert child product objects to array for OpenSearch
-       if(isset($childProducts)) {
-           foreach ($childProducts as $child) {
-               $child = $this->productFactory->create()->load($child->getId());
-               $childProductsArray[] = [
-                   'entity_id' => (int)$child->getId(),
-                   'sku' => $child->getSku(),
-                   'name' => $child->getName(),
-                   'price' => (float)$child->getPrice(),
-                   'final_price' => (float)$child->getFinalPrice(),
-                   'special_price' => (float)$child->getSpecialPrice(),
-                   'is_in_stock' => (bool)$child->getExtensionAttributes()?->getStockItem()?->getIsInStock(),
-                   'stock_qty' => (float)$child->getExtensionAttributes()?->getStockItem()?->getQty(),
-                   'image' => $child->getImage() ?? '',
-                   'small_image' => $child->getSmallImage() ?? '',
-                   'thumbnail' => $child->getThumbnail() ?? '',
-                   'custom_attributes' => $this->getCustomAttributesArray($child, $configurableOptions),
-                   'store_id' => $child->getStoreId(),
-                   'store_ids' => $child->getStoreIds()
-               ];
-           }
-       }
+        if (empty($childProducts)) {
+            return $childProductsArray;
+        }
 
+        // Collect child ids from the type instance's already-resolved child list.
+        $childIds = [];
+        foreach ($childProducts as $child) {
+            $cid = (int)$child->getId();
+            if ($cid) {
+                $childIds[$cid] = $cid;
+            }
+        }
+        if (!$childIds) {
+            return $childProductsArray;
+        }
+        $childIds = array_values($childIds);
+
+        // ONE set-based collection load for ALL children (replaces a full ->load() per
+        // child — the N+1 that made a 660-child configurable take ~60s to project).
+        $childCollection = $this->productCollectionFactory->create();
+        $childCollection->addAttributeToSelect('*')
+            ->addFieldToFilter('entity_id', ['in' => $childIds]);
+        $childCollection->load();
+
+        // ONE batch stock query for all children (replaces getStockItem() per child).
+        $stockMap = $this->getStockMap($childIds);
+        // Children inherit the parent's store scope; compute once (avoids getStoreIds() per child).
+        $parentStoreId  = $product->getStoreId();
+        $parentStoreIds = $product->getStoreIds();
+
+        foreach ($childCollection as $child) {
+            $cid = (int)$child->getId();
+            $stock = $stockMap[$cid] ?? ['qty' => 0.0, 'is_in_stock' => false];
+            $childProductsArray[] = [
+                'entity_id' => $cid,
+                'sku' => $child->getSku(),
+                'name' => $child->getName(),
+                'price' => (float)$child->getPrice(),
+                'final_price' => (float)$child->getFinalPrice(),
+                'special_price' => (float)$child->getSpecialPrice(),
+                'is_in_stock' => (bool)$stock['is_in_stock'],
+                'stock_qty' => (float)$stock['qty'],
+                'image' => $child->getImage() ?? '',
+                'small_image' => $child->getSmallImage() ?? '',
+                'thumbnail' => $child->getThumbnail() ?? '',
+                'custom_attributes' => $this->getCustomAttributesArray($child, $configurableOptions),
+                'store_id' => $parentStoreId,
+                'store_ids' => $parentStoreIds,
+            ];
+        }
 
         return $childProductsArray;
+    }
+
+    /**
+     * Batch stock (qty + is_in_stock) for a set of product ids — one query instead of
+     * a getExtensionAttributes()->getStockItem() load per child.
+     *
+     * @param int[] $productIds
+     * @return array<int, array{qty:float,is_in_stock:bool}>
+     */
+    private function getStockMap(array $productIds): array
+    {
+        if (!$productIds) {
+            return [];
+        }
+        $connection = $this->productCollectionFactory->create()->getConnection();
+        $select = $connection->select()
+            ->from($connection->getTableName('cataloginventory_stock_item'), ['product_id', 'qty', 'is_in_stock'])
+            ->where('product_id IN (?)', $productIds)
+            ->where('stock_id = ?', 1);
+
+        $map = [];
+        foreach ($connection->fetchAll($select) as $row) {
+            $map[(int)$row['product_id']] = [
+                'qty' => (float)$row['qty'],
+                'is_in_stock' => (bool)$row['is_in_stock'],
+            ];
+        }
+        return $map;
     }
 
     private function getCustomAttributesArray(\Magento\Catalog\Model\Product $product, array $configurableOptions): array
@@ -671,8 +768,27 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
                 continue;
             }
 
-            if ($attribute->usesSource() && $this->safeGetSource($attribute)) {
-                $value = $product->getAttributeText($attributeCode);
+            // Resolve select/multiselect labels via the per-run option-label cache
+            // (getAllOptions once per attribute) instead of getAttributeText(), whose
+            // getOptionText() hits the DB per option per child — thousands of round-trips
+            // across a big configurable's children.
+            if ($attribute->usesSource()) {
+                $source = $this->safeGetSource($attribute);
+                if ($source) {
+                    $raw = (string)$value;
+                    if ($raw !== '' && strpos($raw, ',') !== false) {
+                        $labels = [];
+                        foreach (explode(',', $raw) as $optionId) {
+                            $label = $this->resolveOptionLabel($attributeCode, $source, trim($optionId));
+                            if ($label !== '') {
+                                $labels[] = $label;
+                            }
+                        }
+                        $value = $labels;
+                    } else {
+                        $value = $this->resolveOptionLabel($attributeCode, $source, $value);
+                    }
+                }
             }
 
             if (!empty($value)) {
@@ -680,6 +796,43 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
             }
         }
         return $customAttributes;
+    }
+
+    /**
+     * Full swatch data for a set of attributes, set-based (one query), so the PDP can
+     * render swatches from OpenSearch with no product SQL.
+     *
+     * @param int[] $attributeIds
+     * @return array<int, array<int, array{type:int,value:string,label:string}>>
+     */
+    private function getSwatchOptions(array $attributeIds): array
+    {
+        $attributeIds = array_values(array_unique(array_filter(array_map('intval', $attributeIds))));
+        if (!$attributeIds) {
+            return [];
+        }
+        $connection = $this->productCollectionFactory->create()->getConnection();
+        $optTable   = $connection->getTableName('eav_attribute_option');
+        $valTable   = $connection->getTableName('eav_attribute_option_value');
+        $swatchTable = $connection->getTableName('eav_attribute_option_swatch');
+
+        $select = $connection->select()
+            ->from(['o' => $optTable], ['attribute_id', 'option_id'])
+            ->joinLeft(['v' => $valTable], 'v.option_id = o.option_id AND v.store_id = 0', ['label' => 'value'])
+            ->joinLeft(['s' => $swatchTable], 's.option_id = o.option_id AND s.store_id = 0', ['type', 'swatch' => 'value'])
+            ->where('o.attribute_id IN (?)', $attributeIds);
+
+        $result = [];
+        foreach ($connection->fetchAll($select) as $row) {
+            $attrId = (int)$row['attribute_id'];
+            $optId  = (int)$row['option_id'];
+            $result[$attrId][$optId] = [
+                'type'  => $row['type'] !== null ? (int)$row['type'] : 0,
+                'value' => (string)($row['swatch'] ?? ''),
+                'label' => (string)($row['label'] ?? ''),
+            ];
+        }
+        return $result;
     }
 
     private function getConfigurableAttributes(\Magento\Catalog\Model\Product $product): array

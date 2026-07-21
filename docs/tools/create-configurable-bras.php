@@ -190,13 +190,18 @@ for ($n = 1; $n <= $numProducts; $n++) {
         foreach ($sizeList as $size) {
             $cupIdx = $sizes[$size];
             $price = $basePrice + $cupIdx * 3.0; // bigger cup => +$3/step
-            $childSku = sprintf('%s-%s-%s', $parentSku,
-                strtoupper(substr($color, 0, 3)), strtoupper($size));
+            // Full color slug (NOT substr(...,3): e.g. Champagne/Charcoal both -> "CHA",
+            // which collided into one child and broke configurable validation).
+            $colorSlug = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', $color));
+            $sizeSlug  = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', $size));
+            $childSku = sprintf('%s-%s-%s', $parentSku, $colorSlug, $sizeSlug);
             $cid = makeSimpleChild($productFactory, $productRepo, $stockRegistry, $setId,
                 $childSku, $parentName . " - $color $size", $price,
                 $colorIds[$color], $sizeIds[$size], $COLOR_ATTR, $SIZE_ATTR, $img);
-            $childIds[] = $cid;
-            $childCount++;
+            if (!in_array($cid, $childIds, true)) { // safety: never link a child twice
+                $childIds[] = $cid;
+                $childCount++;
+            }
         }
     }
 
