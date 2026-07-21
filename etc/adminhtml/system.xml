@@ -89,6 +89,34 @@
                 </field>
             </group>
 
+            <!-- AI Assistant (Claude) -->
+            <group id="ai" translate="label" sortOrder="25" showInDefault="1" showInWebsite="0" showInStore="0">
+                <label>AI Assistant (Claude)</label>
+                <comment><![CDATA[Connect a Claude API key to auto-generate a search thesaurus from your own catalogue. Get a key at <a href="https://console.anthropic.com/" target="_blank">console.anthropic.com</a>.]]></comment>
+
+                <field id="claude_api_key" translate="label comment" type="obscure" sortOrder="10" showInDefault="1" showInWebsite="0" showInStore="0">
+                    <label>Claude API Key</label>
+                    <backend_model>Magento\Config\Model\Config\Backend\Encrypted</backend_model>
+                    <comment>Stored encrypted. Used only for the generator below; leave blank to disable AI features.</comment>
+                </field>
+
+                <field id="claude_model" translate="label comment" type="text" sortOrder="20" showInDefault="1" showInWebsite="0" showInStore="0">
+                    <label>Model</label>
+                    <comment>Claude model id. Default claude-opus-4-8.</comment>
+                </field>
+
+                <field id="max_terms" translate="label comment" type="text" sortOrder="30" showInDefault="1" showInWebsite="0" showInStore="0">
+                    <label>Max Catalogue Terms</label>
+                    <comment>Upper bound on attribute values + category names sent to the model (keeps large catalogues bounded). Default 1200.</comment>
+                </field>
+
+                <field id="generate_thesaurus" translate="label comment" sortOrder="40" showInDefault="1" showInWebsite="0" showInStore="0">
+                    <label>Generate Thesaurus</label>
+                    <frontend_model>ParkkTech\FastMagento\Block\Adminhtml\System\Config\GenerateThesaurusButton</frontend_model>
+                    <comment>Reads your attribute values + categories and builds shopper-facing synonym groups, merged into Search &gt; Synonyms above. Save the API Key first. Review and Save the Synonyms field afterward.</comment>
+                </field>
+            </group>
+
             <!-- Cache Optimization -->
             <group id="cache" translate="label" sortOrder="30" showInDefault="1" showInWebsite="1" showInStore="1">
                 <label>Cache Optimization</label>

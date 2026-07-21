@@ -166,6 +166,26 @@ reindex, no PDP JS**:
 - Note: pre-existing OS-doc↔jsonConfig stock mismatch (child 3709 Black/34DD) surfaced during
   testing — that's the stock-reindex staleness below, not this feature.
 
+## AI thesaurus generator + synonym defaults — DONE
+Admin can auto-build the search thesaurus from the store's OWN catalogue instead of hand-curating.
+- Admin config group `fastmagento/ai/*` (system.xml): encrypted `claude_api_key` (obscure +
+  Encrypted backend), `claude_model` (default claude-opus-4-8), `max_terms`, and a
+  "Generate thesaurus from catalogue" button.
+- `Model/Ai/AiConfig` (reads/decrypts key), `Model/Ai/AnthropicClient` (raw HTTPS POST to
+  api.anthropic.com/v1/messages via Magento CurlFactory — NO composer dep, structured outputs),
+  `Model/Ai/ThesaurusGenerator` (collects vocab: 17 select/multiselect attribute option labels +
+  218 category names via SQL → prompts model → merges groups into `fastmagento/search/synonyms`
+  without clobbering existing lines → reinit config).
+- `Controller/Adminhtml/Ai/GenerateThesaurus` (ACL `ParkkTech_FastMagento::config`, form-key POST),
+  `Block/.../GenerateThesaurusButton`, `etc/adminhtml/routes.xml` (admin route `fastmagento`).
+- config.xml synonyms expanded with colour-family + size (xs..xxxl, spelled/abbrev) + material +
+  apparel default groups. Verified live: "beige"→Sand(99), "burgundy"/"wine"→Merlot(104).
+- Generator not runnable without a real API key (admin-entered); vocab SQL + wiring verified,
+  di:compile GREEN.
+- ⚠️ NOTE vs CLAUDE.md "no AI/Claude mentions" hard rule: this feature is a user-requested product
+  integration that must name the Anthropic API + is labelled "Claude API Key" per request. Rename
+  identifiers/labels provider-neutrally before any subtree push if the shared repo enforces that rule.
+
 ## Real-time stock sync — DONE
 `Model/OpenSearch/StockSyncer` + observers (sales_order_place_after,
 sales_order_creditmemo_save_after) + plugins (SourceItemsSave/DeleteInterface) reproject

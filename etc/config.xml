@@ -27,10 +27,28 @@ lavender, purple, violet
 mount, bracket, tab
 bolt, screw, fastener
 shock, damper, coilover
-2xl, xxl
-xl, extra large
-sm, small</synonyms>
+teal, aqua, turquoise
+beige, tan, khaki, sand
+olive, army green
+silver, metallic, gunmetal
+tee, t-shirt, tshirt
+hoodie, hoody, sweatshirt
+pants, trousers, bottoms
+sneakers, trainers, tennis shoes
+jacket, coat
+leather, genuine leather
+xs, extra small, x-small
+s, sm, small
+m, medium, med
+l, large, lg
+xl, extra large, x-large
+xxl, 2xl, double xl
+xxxl, 3xl, triple xl</synonyms>
             </search>
+            <ai>
+                <claude_model>claude-opus-4-8</claude_model>
+                <max_terms>1200</max_terms>
+            </ai>
         </fastmagento>
     </default>
 </config>
