@@ -38,6 +38,62 @@ supervised test order** (owner places it): tax, totals, custom options, stock de
 placement — and confirm **no overselling** (stock accuracy at checkout) — before trusting it.
 Do NOT half-build this; it is checkout.
 
+### BUILD SPEC (scoped 2026-07-21 — two deep-trace agents; ready to implement)
+**Interception:** preference on `Magento\Quote\Model\ResourceModel\Quote\Item\Collection`
+overriding **`_assignProducts()`** only (the ~217-SQL native `Product\Collection` build at
+vendor line ~257). The other product-load site, `removeItemsWithAbsentProducts()` (~line 393),
+is a cheap id-only `getAllIds()` prune — leave it.
+
+**Design (minimal divergence + hard fallback):**
+1. Guard: not frontend area OR flag off → `parent::_assignProducts()`.
+2. Batch-fetch all `$this->_productIds` from OS in ONE mget (`OpenSearchPdpFetcher::fetchByIds`).
+3. **Any id missing/partial → `return parent::_assignProducts()`** (hard native fallback for the
+   WHOLE collection — never half-serve a mixed cart). This path is 100% native = safe.
+4. Full hit: build a real `Product\Collection`, populate with OS-hydrated shells via `addItem()`
+   WITHOUT calling `load()` (no SQL); then run core's exact body — dispatch BOTH events
+   (`prepare_catalog_product_collection_prices`, `sales_quote_item_collection_products_after_load`
+   so `AddStockItemsObserver`/catalog-rule/3rd-party observers still fire) + the identical
+   per-item loop (`setProduct`, `checkData`).
+
+**Gotcha (found during scoping):** core `_assignProducts` uses PRIVATE members —
+`recollectQuote`, `config` (Quote\Model\Config), and private helpers `getOptionProductIds()` /
+`isValidProduct()`. A subclass can't reach them, so the OS branch must inject `Quote\Model\Config`
+itself, manage a local recollect flag, and copy those two small helpers inline. The fallback
+branch (`parent::_assignProducts()`) is unaffected — parent uses its own privates.
+
+**Flag-gate it** (e.g. `fastmagento/cart/os_serve_quote_items`, default 0) so every commit is
+inert until explicitly enabled — the safe way to land checkout code; enable in dev to measure.
+
+**Shell coverage vs requirements (from the trace) — mostly GREEN (shell is already cart-proven
+via getById + PDP add-to-cart):** getId/sku/name/type/status/visibility ✅, `getFinalPrice($qty)`
+✅ (per-group catalog-rule pricing built), `getTaxClassId()` ✅ (doc tax_class_id), `getExtension
+Attributes()->getStockItem()` ✅, `getTypeInstance()` (checkProductBuyState/getOrderOptions) ✅,
+`isVisibleInCatalog()` ✅, configurable child wiring ✅ (Task 2). **Verify/close during build:**
+(a) custom options hydration (`getOptions/getOptionById`) for products that actually have them;
+(b) downloadable links in cart (95% of the REAL sellable catalog — was ~27 of the cart SQL);
+(c) `weight` — only 19/14,604 products have it, low-priority but index for correctness.
+
+**Highest-risk getters to diff vs native (silent wrongness):** `getFinalPrice($qty)` (subtotal),
+`getTaxClassId()` (tax read LIVE off product, ignores item copy), `getStatus()` must be ENABLED
+(blank = item silently deleted → cart empties), `isVisibleInCatalog()` (else dropped from subtotal
+unless super-mode), `getExtensionAttributes()` must be a real object (AddStockItemsObserver +
+setProduct call it unconditionally → null fatals the quote load).
+
+**Reassuring:** the REAL stock decrement is shell-independent — MSI's
+`AppendReservationsAfterOrderPlacementPlugin` re-derives SKU from `order_item.product_id` via
+`GetSkusByProductIdsInterface` and reserves by SKU. A shell can't corrupt the decrement; the only
+stock risk is fooling pre-placement `QuantityValidator` via wrong getId()/getStore()/getStatus().
+
+**Staged build (each measured COLD w/ FPC off + db_logger; commit atomically):**
+1. Baseline cold cart SQL (simple+downloadable+configurable cart) — measure by driving the browser
+   cart (session-bound; curl can't) with db_logger on, count new `## ` log lines.
+2. Preference skeleton + flag + hard-fallback passthrough — cart/checkout render IDENTICAL to native.
+3. OS-serve the load; measure SQL drop; **diff totals/tax/subtotal byte-for-byte vs native (flag off
+   vs on)** on guest AND wholesale group.
+4. Close custom-options + downloadable hydration gaps found in step 3.
+5. HAND OFF: owner places a real supervised order (guest + wholesale) — tax, totals, options,
+   order-item conversion, stock decrement, NO overselling — before enabling the flag for real.
+
 ## Secondary task — 2nd-configurable add-to-cart bug — DONE (commit 2c6dc57b6)
 The handoff description ("silent, no error, no quote_item row, only the 2nd configurable")
 was inaccurate on every point. Real symptom: add-to-cart failed with **"This product is out
