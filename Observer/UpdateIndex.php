@@ -4,26 +4,47 @@ namespace ParkkTech\FastMagento\Observer;
 
 use Magento\Framework\Event\Observer;
 use Magento\Framework\Event\ObserverInterface;
-use OpenSearch\Client;
+use Magento\AdvancedSearch\Model\Client\ClientResolver;
+use Magento\Framework\Search\EngineResolverInterface;
+use ParkkTech\FastMagento\Helper\OpenSearchConfig;
+use Psr\Log\LoggerInterface;
 
 class UpdateIndex implements ObserverInterface
 {
-    private $openSearchClient;
+    private $clientResolver;
+    private $engineResolver;
+    private $openSearchConfig;
+    private $logger;
 
-    public function __construct(Client $openSearchClient)
-    {
-        $this->openSearchClient = $openSearchClient;
+    public function __construct(
+        ClientResolver $clientResolver,
+        EngineResolverInterface $engineResolver,
+        OpenSearchConfig $openSearchConfig,
+        LoggerInterface $logger
+    ) {
+        $this->clientResolver = $clientResolver;
+        $this->engineResolver = $engineResolver;
+        $this->openSearchConfig = $openSearchConfig;
+        $this->logger = $logger;
     }
 
     public function execute(Observer $observer)
     {
-        $product = $observer->getEvent()->getProduct();
-        $productData = $product->getData();
+        try {
+            $product = $observer->getEvent()->getProduct();
+            $productData = $product->getData();
 
-        $this->openSearchClient->index([
-            'index' => 'magento_products',
-            'id'    => $product->getId(),
-            'body'  => $productData
-        ]);
+            $engine = $this->engineResolver->getCurrentSearchEngine();
+            $searchClient = $this->clientResolver->create($engine);
+            $indexName = $this->openSearchConfig->getIndexName();
+
+            $searchClient->getOpenSearchClient()->index([
+                'index' => $indexName,
+                'id'    => (string)$product->getId(),
+                'body'  => $productData
+            ]);
+        } catch (\Exception $e) {
+            $this->logger->error('UpdateIndex error: ' . $e->getMessage());
+        }
     }
 }

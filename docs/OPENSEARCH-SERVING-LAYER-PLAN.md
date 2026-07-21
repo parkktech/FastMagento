@@ -10,7 +10,12 @@
 
 1. **OpenSearch is the serving layer.** PDP, PLP/category, search, and layered
    navigation are served entirely from OpenSearch — zero MySQL/EAV product loads
-   on those paths.
+   on those paths. **Measured, not assumed:** every page/method/class is profiled
+   with the DB query logger (`docs/tools/query-profile.sh`, which logs each query
+   with the class that fired it) and driven toward zero product-data SQL. No
+   redundant/parallel DB load may run alongside an OpenSearch fetch for the same
+   data — if OS provides it, the native EAV/collection load must be suppressed, not
+   run-and-discarded.
 2. **MySQL stays the source of truth.** The DB keeps all object-oriented storage.
    Every write (admin, REST/GraphQL, import, mass action, order stock decrement)
    keeps OpenSearch in sync — including deletes and qty/price changes.

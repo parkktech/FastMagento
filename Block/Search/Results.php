@@ -4,22 +4,34 @@ namespace ParkkTech\FastMagento\Block\Search;
 
 use Magento\Framework\View\Element\Template;
 use Magento\Framework\UrlInterface;
-use OpenSearch\Client;
+use Magento\AdvancedSearch\Model\Client\ClientResolver;
+use Magento\Framework\Search\EngineResolverInterface;
+use ParkkTech\FastMagento\Helper\OpenSearchConfig;
+use Psr\Log\LoggerInterface;
 
 class Results extends Template
 {
-    private $openSearchClient;
+    private $clientResolver;
+    private $engineResolver;
+    private $openSearchConfig;
     private $urlBuilder;
+    private $logger;
 
     public function __construct(
         Template\Context $context,
-        Client $openSearchClient,
+        ClientResolver $clientResolver,
+        EngineResolverInterface $engineResolver,
+        OpenSearchConfig $openSearchConfig,
         UrlInterface $urlBuilder,
+        LoggerInterface $logger,
         array $data = []
     ) {
         parent::__construct($context, $data);
-        $this->openSearchClient = $openSearchClient;
+        $this->clientResolver = $clientResolver;
+        $this->engineResolver = $engineResolver;
+        $this->openSearchConfig = $openSearchConfig;
         $this->urlBuilder = $urlBuilder;
+        $this->logger = $logger;
     }
 
     public function getProducts()
@@ -33,43 +45,34 @@ class Results extends Template
         $currentPage = (int) $this->getRequest()->getParam('p', 1);
         $offset = ($currentPage - 1) * $pageSize;
 
-        $query = [
-            'index' => 'magento_products',
-            'body' => [
-                'query' => [
-                    'bool' => [
-                        'must' => [
-                            ['match' => ['name' => $queryText]]
-                        ]
-                    ]
-                ],
-                'size' => $pageSize,
-                'from' => $offset,
-                'sort' => [['relevance' => 'desc']]
-            ]
-        ];
-
         try {
-            $response = $this->openSearchClient->search($query);
+            // Get the engine code from admin config and build the client
+            $engine = $this->engineResolver->getCurrentSearchEngine();
+            $searchClient = $this->clientResolver->create($engine);
+            $indexName = $this->openSearchConfig->getIndexName();
+
+            $query = [
+                'index' => $indexName,
+                'body' => [
+                    'query' => [
+                        'bool' => [
+                            'must' => [
+                                ['match' => ['name' => $queryText]]
+                            ]
+                        ]
+                    ],
+                    'size' => $pageSize,
+                    'from' => $offset,
+                    'sort' => [['relevance' => 'desc']]
+                ]
+            ];
+
+            $response = $searchClient->getOpenSearchClient()->search($query);
             return array_map(fn($hit) => $hit['_source'], $response['hits']['hits']);
         } catch (\Exception $e) {
+            $this->logger->error('Search Results Block error: ' . $e->getMessage());
             return [];
         }
-    }
-
-    public function getPaginationHtml()
-    {
-        $currentPage = (int) $this->getRequest()->getParam('p', 1);
-        $prevPage = $currentPage > 1 ? $currentPage - 1 : 1;
-        $nextPage = $currentPage + 1;
-
-        $queryString = '?q=' . urlencode($this->getSearchQuery()) . '&limit=' . $this->getRequest()->getParam('limit', 12);
-
-        return "
-            <a href='{$queryString}&p=$prevPage' class='page-prev'>Previous</a>
-            <span>Page $currentPage</span>
-            <a href='{$queryString}&p=$nextPage' class='page-next'>Next</a>
-        ";
     }
 
     public function getSearchQuery()
@@ -84,11 +87,6 @@ class Results extends Template
 
     public function getProductImage(array $product): string
     {
-        return isset($product['image']) ? $product['image'] : $this->getDefaultImage();
-    }
-
-    private function getDefaultImage(): string
-    {
-        return $this->getViewFileUrl('Magento_Catalog/images/product/placeholder/image.jpg');
+        return isset($product['image']) ? $product['image'] : '';
     }
 }
