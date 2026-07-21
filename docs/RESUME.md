@@ -74,9 +74,14 @@ native `catalog_product_index_eav`. Setup scripts: `docs/tools/create-fitment-at
    native downloadable blocks, remove the interim block-removal in catalog_product_view.xml.
 3. **All product types + test products**: no configurable/grouped/bundle exist —
    create samples (configurable needs a super-attribute like `size`) and support each.
-4. **Category from OpenSearch (Phase 2L)**: search page still fires ~236 product SQL
-   (category ~58 + url_rewrite ~112 category-driven). Index category name/request_path/
-   tree per store; build the collection `<preference>` + OS aggregations for layered nav.
+4. **Category from OpenSearch (Phase 2L)**: search page down to **128 SQL** (was 342).
+   ✅ url_rewrite N+1 killed — `CategoryUrlFinderPlugin` batches all category rewrites
+   for a store into one query (112→5). Remaining category-driven SQL is
+   `catalog_category_entity*` ~58 (menu/breadcrumb/tree attribute loads, mostly batched
+   collection loads + a few per-category single-entity loads) + `eav_attribute` ~23.
+   Killing these needs the full category OS indexer: index category
+   name/is_active/include_in_menu/request_path/tree per store, then serve the menu +
+   layered-nav collections from OS. That's the next big build (not just a plugin).
 5. **Layered nav / instant-search UX / write-path sync + delete / resilience
    (OS-down fallback, zero-downtime alias reindex, reconciliation) / admin config /
    harden** — see plan §4. Not started.
