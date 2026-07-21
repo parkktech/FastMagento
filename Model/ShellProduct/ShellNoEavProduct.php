@@ -54,6 +54,7 @@ class ShellNoEavProduct extends CoreProduct
     private $urlFinder;
     private $categoryCollectionFactory;
     private $scopeConfig;
+    private $customerGroupSession;
     private ?string $cachedUrl = null;
 
     public function __construct(
@@ -101,7 +102,8 @@ class ShellNoEavProduct extends CoreProduct
         // required deps before $data shifted that slot and caused a constructor TypeError.
         ?UrlFinderInterface $urlFinder = null,
         ?CategoryCollectionFactory $categoryCollectionFactory = null,
-        ?ScopeConfigInterface $scopeConfig = null
+        ?ScopeConfigInterface $scopeConfig = null,
+        ?\Magento\Customer\Model\Session $customerGroupSession = null
     )
     {
         $om = \Magento\Framework\App\ObjectManager::getInstance();
@@ -110,6 +112,7 @@ class ShellNoEavProduct extends CoreProduct
         $this->urlFinder = $urlFinder ?? $om->get(UrlFinderInterface::class);
         $this->categoryCollectionFactory = $categoryCollectionFactory ?? $om->get(CategoryCollectionFactory::class);
         $this->scopeConfig = $scopeConfig ?? $om->get(ScopeConfigInterface::class);
+        $this->customerGroupSession = $customerGroupSession ?? $om->get(\Magento\Customer\Model\Session::class);
         parent::__construct($context, $registry, $extensionFactory, $customAttributeFactory, $storeManager, $metadataService, $url, $productLink, $itemOptionFactory, $stockItemFactory, $catalogProductOptionFactory, $catalogProductVisibility, $catalogProductStatus, $catalogProductMediaConfig, $catalogProductType, $moduleManager, $catalogProduct, $resource, $resourceCollection, $collectionFactory, $filesystem, $indexerRegistry, $productFlatIndexerProcessor, $productPriceIndexerProcessor, $productEavIndexerProcessor, $categoryRepository, $imageCacheFactory, $entityCollectionProvider, $linkTypeProvider, $productLinkFactory, $productLinkExtensionFactory, $mediaGalleryEntryConverterPool, $dataObjectHelper, $joinProcessor);
     }
 
@@ -197,18 +200,71 @@ class ShellNoEavProduct extends CoreProduct
         return $this->doc['image'] ?? parent::getImage();
     }
 
+    /**
+     * Regular (list) price — MUST be the base price, never the catalog-rule price. Core
+     * RegularPrice::getValue() reads this for the strikethrough "old price"; returning the
+     * rule price here made the discounted price show as its own "was" price. The rule is
+     * applied only through the FinalPrice/CatalogRulePrice models (and getFinalPrice()).
+     */
     public function getPrice()
     {
-        return $this->getData('catalog_rule_price')['rule_price']
-            ?? $this->doc['final_price']
-            ?? parent::getPrice();
+        return $this->doc['price'] ?? parent::getPrice();
     }
 
     public function getFinalPrice($qty = null)
     {
-        return $this->getData('catalog_rule_price')['rule_price']
+        $rulePrice = $this->getCatalogRulePriceForCurrentGroup();
+        return $rulePrice
             ?? $this->doc['final_price']
             ?? parent::getFinalPrice($qty);
+    }
+
+    /**
+     * Current storefront customer group id (0 = NOT LOGGED IN for a guest).
+     */
+    private function getCurrentCustomerGroupId(): int
+    {
+        try {
+            return (int) $this->customerGroupSession->getCustomerGroupId();
+        } catch (\Throwable $e) {
+            return 0;
+        }
+    }
+
+    /**
+     * Catalog-rule price for a specific customer group from the indexed per-group map, or
+     * null when no rule applies to that group. Falls back to the legacy group-0 scalar for
+     * docs indexed before the per-group map existed.
+     *
+     * @param int $groupId
+     * @return float|null
+     */
+    public function getCatalogRulePriceForGroup(int $groupId): ?float
+    {
+        // New format: per-group map is authoritative. A group absent from the map has NO
+        // rule (return null) — do NOT fall back to the group-0 scalar, or e.g. a Retailer
+        // with no rule would inherit the guest discount.
+        if (array_key_exists('catalog_rule_prices', $this->doc)) {
+            $map = $this->doc['catalog_rule_prices'];
+            // json_decode gives string keys; PHP array access normalizes "0" -> 0.
+            if (is_array($map) && array_key_exists($groupId, $map)) {
+                return (float) $map[$groupId];
+            }
+            return null;
+        }
+        // Legacy doc (indexed before the per-group map): fall back to the group-0 scalar.
+        $scalar = $this->doc['catalog_rule_price']['rule_price'] ?? null;
+        return $scalar !== null ? (float) $scalar : null;
+    }
+
+    /**
+     * Catalog-rule price for the CURRENT customer group (guest, Wholesale, Retailer, …).
+     *
+     * @return float|null
+     */
+    public function getCatalogRulePriceForCurrentGroup(): ?float
+    {
+        return $this->getCatalogRulePriceForGroup($this->getCurrentCustomerGroupId());
     }
 
     public function getSpecialPrice()

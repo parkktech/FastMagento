@@ -46,6 +46,11 @@
     <preference for="Magento\CatalogRule\Pricing\Price\CatalogRulePrice"
                 type="ParkkTech\FastMagento\Pricing\Price\CatalogRulePrice" />
 
+    <!-- ✅ Override SpecialPrice on the frontend so a shell's special_price=0 (no special
+         price) is treated as "none" instead of a $0 special that zeroes out FinalPrice. -->
+    <preference for="Magento\Catalog\Pricing\Price\SpecialPrice"
+                type="ParkkTech\FastMagento\Pricing\Price\SpecialPrice" />
+
     <!-- ✅ Serve the configurable price resolver from OpenSearch child shells (carrying
          indexed catalog-rule + tier price) instead of a native child collection. Kills the
          per-child catalogrule_product_price + catalog_product_entity_tier_price N+1 on the

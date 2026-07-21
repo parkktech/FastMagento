@@ -462,8 +462,17 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
         // ✅ Add Tier Prices from MySQL to OpenSearch
         $productData['tier_prices'] = $this->getTierPrices($product);
 
-        // ✅ Add Catalog Rule Prices from MySQL to OpenSearch
-        $productData['catalog_rule_price'] = $this->getCatalogRulePrice($product);
+        // ✅ Add Catalog Rule Prices from MySQL to OpenSearch, PER CUSTOMER GROUP.
+        // Catalog rules are group-specific (a Wholesale rule prices differently than a guest
+        // rule), so the doc carries a {group_id => rule_price} map and the read path resolves
+        // the current customer group. `catalog_rule_price` is kept as the group-0 scalar for
+        // backward compatibility with any code still reading it.
+        $ruleByGroup = $this->getRulePriceMapByGroup([(int)$product->getId()]);
+        $parentRuleMap = $ruleByGroup[(int)$product->getId()] ?? [];
+        $productData['catalog_rule_prices'] = $parentRuleMap;
+        $productData['catalog_rule_price'] = isset($parentRuleMap[0])
+            ? ['rule_price' => (float)$parentRuleMap[0]]
+            : [];
 
         // ✅ Add Parent IDs for Simple Products (If Configurable)
         if ($product->getTypeId() === 'simple') {
@@ -712,29 +721,6 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
     }
 
     /**
-     * ✅ Fetch Catalog Rule Prices from `catalogrule_product_price` Using Proper DI
-     */
-    private function getCatalogRulePrice(\Magento\Catalog\Model\Product $product): array
-    {
-        $catalogRulePriceData = [];
-
-        $rulePrice = $this->catalogRuleResource->getRulePrice(
-            new \DateTime(),
-            1, // Website ID
-            0, // Customer Group ID (adjust for multi-group support)
-            $product->getId()
-        );
-
-        if (!empty($rulePrice)) {
-            $catalogRulePriceData = [
-                'rule_price' => (float)$rulePrice
-            ];
-        }
-
-        return $catalogRulePriceData;
-    }
-
-    /**
      * ✅ Fetch Parent Configurable Product IDs Using Proper DI
      */
     private function getParentIds(\Magento\Catalog\Model\Product $product): array
@@ -806,7 +792,7 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
         // (ConfigurablePriceResolver → LowestPriceOptionsProvider → per-child BasePrice)
         // fires one catalogrule_product_price + one catalog_product_entity_tier_price query
         // PER child — the ~660-pair N+1 on a big configurable.
-        $ruleMap = $this->getChildRulePrices($childIds);
+        $ruleMap = $this->getRulePriceMapByGroup($childIds);
         $tierMap = $this->getChildTierPrices($childIds);
         // Children inherit the parent's store scope; compute once (avoids getStoreIds() per child).
         $parentStoreId  = $product->getStoreId();
@@ -827,10 +813,13 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
                 'image' => $child->getImage() ?? '',
                 'small_image' => $child->getSmallImage() ?? '',
                 'thumbnail' => $child->getThumbnail() ?? '',
-                // Serve catalog-rule/tier price from the doc. Always set both keys (even empty)
+                // Serve catalog-rule/tier price from the doc. Always set the keys (even empty)
                 // so the shell's price models short-circuit instead of falling through to SQL:
                 // a missing key means "not indexed" → native DB fallback (the N+1 we're killing).
-                'catalog_rule_price' => isset($ruleMap[$cid]) ? ['rule_price' => (float)$ruleMap[$cid]] : [],
+                // catalog_rule_prices is the per-group map; catalog_rule_price is the group-0
+                // scalar kept for backward compatibility.
+                'catalog_rule_prices' => $ruleMap[$cid] ?? [],
+                'catalog_rule_price' => isset($ruleMap[$cid][0]) ? ['rule_price' => (float)$ruleMap[$cid][0]] : [],
                 'tier_prices' => $tierMap[$cid] ?? [],
                 'custom_attributes' => $this->getCustomAttributesArray($child, $configurableOptions),
                 'store_id' => $parentStoreId,
@@ -870,20 +859,38 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
     }
 
     /**
-     * Batch catalog-rule prices for a set of product ids — one query (getRulePrices) instead
-     * of one getRulePrice() per child at price-calc time. Website 1 / customer group 0 mirror
-     * the parent's getCatalogRulePrice() scope.
+     * Batch catalog-rule prices for a set of product ids, for ALL customer groups, in one
+     * query on catalogrule_product_price (today's rule_date, website 1). Returns a nested
+     * map so each product/child carries a {group_id => rule_price} slice and the read path
+     * can resolve the current customer group's price. Replaces the previous per-child,
+     * group-0-only lookup — one query instead of one getRulePrice() per child, and correct
+     * for logged-in Wholesale/Retailer/General customers, not just guests.
      *
      * @param int[] $productIds
-     * @return array<int, float> product_id => rule_price (only ids that have a rule)
+     * @return array<int, array<int, float>> product_id => [customer_group_id => rule_price]
      */
-    private function getChildRulePrices(array $productIds): array
+    private function getRulePriceMapByGroup(array $productIds): array
     {
+        $productIds = array_values(array_unique(array_filter(array_map('intval', $productIds))));
         if (!$productIds) {
             return [];
         }
         try {
-            return $this->catalogRuleResource->getRulePrices(new \DateTime(), 1, 0, $productIds);
+            $connection = $this->productCollectionFactory->create()->getConnection();
+            $select = $connection->select()
+                ->from(
+                    $connection->getTableName('catalogrule_product_price'),
+                    ['product_id', 'customer_group_id', 'rule_price']
+                )
+                ->where('product_id IN (?)', $productIds)
+                ->where('website_id = ?', 1)
+                ->where('rule_date = ?', date('Y-m-d'));
+
+            $map = [];
+            foreach ($connection->fetchAll($select) as $row) {
+                $map[(int)$row['product_id']][(int)$row['customer_group_id']] = (float)$row['rule_price'];
+            }
+            return $map;
         } catch (\Throwable $e) {
             return [];
         }

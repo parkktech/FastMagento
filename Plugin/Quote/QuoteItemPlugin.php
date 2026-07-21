@@ -17,9 +17,11 @@ class QuoteItemPlugin
             return $product;
         }
 
-        // Apply catalog rule price directly
+        // Apply catalog rule price directly, resolved for the quote's customer group
+        // (catalog rules are group-specific).
         if ($product instanceof ShellNoEavProduct) {
-            $rulePrice = $product['catalog_rule_price']['rule_price'] ?? null;
+            $groupId = (int) $subject->getQuote()->getCustomerGroupId();
+            $rulePrice = $product->getCatalogRulePriceForGroup($groupId);
         } else {
             $rulePrice = $product->getPriceInfo()
                 ->getPrice(CatalogRulePrice::PRICE_CODE)
