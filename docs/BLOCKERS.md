@@ -43,8 +43,27 @@ indexer runs on base Magento (1383 docs), search-client converged to native reso
 Phase 1 PDP: renders fully from OpenSearch (0 product SQL). Site fully browsable
 (home/PDP/cart/search 200); product images synced + resized. Everything committed.
 
+## Session end state (handoff)
+**Done + committed (7 commits):** Phase 0 stabilize (di:compile GREEN, plugin conflict,
+base-Magento indexer, native OS client convergence); Phase 1 PDP fully OpenSearch-served
+— **30/30 sampled products render 200, 0 product-data SQL on PDP**, 3rd-party blocks
+(StructuredData) work unchanged; product URLs from OS; search functional; query-profiler
++ baseline. Site fully browsable (home/PDP/cart/search 200); images synced+resized.
+
 ## Open questions (answer when back — NEEDS YOU)
-_(none yet — no decisions have required you)_
+1. **Product types — test data.** You asked to support Configurable/Simple/Grouped/
+   Downloadable. Simple ✓, Downloadable ✓ (functional; block-removal interim),
+   Virtual ✓. But this catalog has **no configurable/grouped/bundle products AND no
+   configurable attributes defined**. Supporting + testing those needs sample products
+   created first (configurable also needs an attribute like size/color set up).
+   → OK to create synthetic test products of each type in this local DB? Any specific
+   attribute you want configurable products built around, or should I invent one
+   (e.g. "size")? This is the one thing I paused on rather than guess.
+
+## Remaining large phases (not started — see plan §4)
+Category-from-OS (Phase 2L, kills the search page's ~115 url_rewrite + 58 category
+queries), layered navigation, instant-search UX, write-path sync + delete, resilience
+(OS-down fallback / alias reindex / reconciliation), admin config, harden/release.
 
 ## Queued next (in order; after in-flight attribute-shape fix)
 1. **Attribute-shape hydration** (in progress) — shell returns native-scalar attribute
