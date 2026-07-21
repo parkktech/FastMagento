@@ -42,6 +42,21 @@
     <!-- ✅ Override Configurable::getParentIdsByChild() Only on Frontend -->
     <preference for="Magento\ConfigurableProduct\Model\ResourceModel\Product\Type\Configurable"
                 type="ParkkTech\FastMagento\Model\Configurable\ConfigurableProductType" />
+    <!-- ParentIdResolver injected as a Proxy: ProductIndexer depends on this resource model
+         (ConfigurableResource), so a direct injection would form a construction cycle. -->
+    <type name="ParkkTech\FastMagento\Model\Configurable\ConfigurableProductType">
+        <arguments>
+            <argument name="parentIdResolver" xsi:type="object">ParkkTech\FastMagento\Model\OpenSearch\ParentIdResolver\Proxy</argument>
+        </arguments>
+    </type>
+
+    <!-- Serve Grouped::getParentIdsByChild() from OpenSearch too (product sliders call it
+         per product alongside the configurable one). Shares ParentIdResolver's cache. -->
+    <type name="Magento\GroupedProduct\Model\Product\Type\Grouped">
+        <plugin name="fastmagento_grouped_parent_ids"
+                type="ParkkTech\FastMagento\Plugin\GroupedParentIdPlugin"
+                sortOrder="10"/>
+    </type>
 
     <!-- ✅ Override Magento’s Configurable Product Type -->
     <preference for="Magento\ConfigurableProduct\Model\Product\Type\Configurable"
