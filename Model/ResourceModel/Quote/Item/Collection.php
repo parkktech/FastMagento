@@ -172,6 +172,15 @@ class Collection extends \Magento\Quote\Model\ResourceModel\Quote\Item\Collectio
 
         /** @var ProductCollection $productCollection */
         $productCollection = $this->_productCollectionFactory->create();
+        // Mark the collection loaded BEFORE populating it. getItemById()/getItems() call
+        // load() on an unloaded collection — which here fires a full-catalog DB read that
+        // both defeats the point AND collides with our pre-added shells ("same ID already
+        // exists"). Flagging it loaded makes those accessors serve our in-memory shells with
+        // zero SQL. _setIsLoaded is protected on Magento\Framework\Data\Collection; a bound
+        // closure reaches it without reflection.
+        (function () {
+            $this->_setIsLoaded(true);
+        })->call($productCollection);
         foreach ($docs as $doc) {
             $shell = $this->osShellBuilder->buildNoEavProductFromOsDoc($doc);
             $shell->setStoreId($storeId);

@@ -94,6 +94,50 @@ stock risk is fooling pre-placement `QuantityValidator` via wrong getId()/getSto
 5. HAND OFF: owner places a real supervised order (guest + wholesale) — tax, totals, options,
    order-item conversion, stock decrement, NO overselling — before enabling the flag for real.
 
+### BUILT + MEASURED (2026-07-21)
+Preference `ParkkTech\FastMagento\Model\ResourceModel\Quote\Item\Collection` (frontend-scoped
+in `etc/frontend/di.xml`) overriding only `_assignProducts()`; flag
+`fastmagento/cart/os_serve_quote_items` (default 0, admin toggle under FastMagento > Cart /
+Checkout Optimization). Hard native fallback for: flag off, non-frontend area, custom-option
+cart (`option_ids`), bundle/grouped, downloadable without indexed links, any id missing/partial,
+or any Throwable.
+
+**Critical fix during build:** `getItemById()` on the in-memory shell collection calls
+`getItems()` → `load()` on an unloaded collection → a FULL-CATALOG DB read (via the Webkul
+Marketplace `Product\Collection` rewrite) that both defeats the purpose AND collides with the
+pre-added shells ("Item with the same ID already exists"). Fix: flag the collection loaded with
+a bound closure to the protected `_setIsLoaded(true)` BEFORE `addItem()`, so accessors serve
+the shells with zero SQL. Without this the OS branch always threw and silently fell back.
+
+**Measured (CLI harness, db_logger on, per-cart item-collection load SQL; flag off→on):**
+- downloadable (guest): **102→66 (−35%)**
+- downloadable+virtual (guest): **105→72 (−31%)**
+- configurable+simple (wholesale grp 2): 225→198 (−12%)
+- configurable+downloadable+simple (guest): 237→201 (−15%)
+
+Totals/subtotal/subtotalWithDiscount/tax/grand **byte-for-byte identical** flag off vs on on
+ALL four (incl. wholesale +15% group rule and 10% all-group rule).
+
+**Two findings from the diff:**
+1. **Configurable carts save less** — a single query loads ALL ~660 child SKUs
+   (`catalog_product_entity WHERE sku IN (…660…)`) during `checkData()`'s configurable
+   salability/stock resolution. It fires in BOTH native and OS paths (checkData is identical),
+   so it's not introduced here — it's the Phase-B batch-child-loading cost. Serving child stock
+   from OS to kill it is a separate follow-up.
+2. **Stale-index divergence caught (then fixed by reindex, not code):** downloadable id 1
+   (605-JEH-001) diverged +6.50 (OS final 65.00 vs native 58.50) because its doc had
+   `catalog_rule_price=[]` / no `catalog_rule_prices` map while the live rule gives grp-0 58.50.
+   The serving code faithfully served the stale doc. `ProductIndexer::execute([1])` reprojected
+   it (`catalog_rule_prices=[58.5,53.5,49.73,58.5]`) and totals then matched. **Lesson: OS-cart
+   correctness depends on a fresh price/rule projection — a full reindex + reconciliation is a
+   prerequisite before enabling the flag in prod.** The MSI stock decrement is still shell-
+   independent (re-derived by SKU), so a stale doc mis-prices but cannot oversell.
+
+Still owner-gated (step 5): real supervised order (guest + wholesale) — order-item conversion,
+stock decrement, no overselling — before enabling for real. Harnesses:
+`scratchpad/quote-measure.php` (SQL + per-item getters + totals), `quote-profile.php`
+(per-table / per-class SQL breakdown). Test quotes: 91291 guest 3-type, 91290 wholesale.
+
 ## Secondary task — 2nd-configurable add-to-cart bug — DONE (commit 2c6dc57b6)
 The handoff description ("silent, no error, no quote_item row, only the 2nd configurable")
 was inaccurate on every point. Real symptom: add-to-cart failed with **"This product is out
