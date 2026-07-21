@@ -31,6 +31,28 @@ per-run option-label cache + streamed FLUSH_SIZE(200) bulk. → **86 q/product (
 stock/tier/rule/parent/category) to kill the remaining per-product model load, optional
 module-owned covering indexes / projection table, alias-swap build. See task backlog.
 
+## Configurable products (swatch stress test — in progress)
+- `docs/tools/create-configurable-bras.php [n] [colors] [sizes]` generates configurable
+  "bra" products: `color` = visual (hex) swatch, `size` = text swatch (band×cup, e.g.
+  34DD..46K), one child simple per color×size with own SKU/price(+$3/cup)/stock/image.
+  swatch_input_type lives in `catalog_eav_attribute.additional_data`; swatch values in
+  `eav_attribute_option_swatch` (type 1=visual color, 0=textual).
+- **DB side verified correct**: HER-KEIRA-001 (id 2005) = configurable, 2 super-attrs
+  (color 3 opts, size 4 opts), 12 linked children, indexed into OS doc with
+  child_products[] + configurable_options_<id>.
+- **Fixed:** `ShellNoEavProduct` constructor TypeError — custom deps ($urlFinder,
+  $categoryCollectionFactory, $scopeConfig) were BEFORE `array $data=[]`, breaking
+  positional instantiation on the configurable child-hydration path; moved them AFTER
+  core's $data/$config/$filterCustomAttribute (nullable + OM fallback).
+- **STILL TODO (OS-served read path, never exercised for configurables):**
+  configurable PDP renders 200 but layered swatch options + `jsonConfig`/`optionPrices`
+  are EMPTY when served from the shell (native path builds them fine). Also
+  `ProductRepository::get()` cache path hits null-SKU via the shell. Need: hydrate the
+  configurable jsonConfig/swatch/child-price data from the OS doc into ShellNoEavProduct
+  (or delegate correctly), fix shell getSku(), then scale fixtures to the real
+  ~19-color × ~77-size matrix and batch child-loading in the indexer (Phase B — current
+  getChildProducts() does a full ->load() per child = N+1 death for 600-child bras).
+
 ## Test bed in place
 19 filterable attributes (all input types), 11 attribute sets with distinct
 compositions, values on all 1383 products, indexed at product level (OS doc) and

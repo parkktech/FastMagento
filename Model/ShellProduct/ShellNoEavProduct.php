@@ -91,19 +91,25 @@ class ShellNoEavProduct extends CoreProduct
         EntryConverterPool                  $mediaGalleryEntryConverterPool,
         DataObjectHelper                    $dataObjectHelper,
         JoinProcessorInterface              $joinProcessor,
-        UrlFinderInterface $urlFinder,
-        CategoryCollectionFactory $categoryCollectionFactory,
-        ScopeConfigInterface $scopeConfig,
         array                               $data = [],
         ?\Magento\Eav\Model\Config           $config = null,
-        ?FilterProductCustomAttribute        $filterCustomAttribute = null
+        ?FilterProductCustomAttribute        $filterCustomAttribute = null,
+        // FastMagento deps are appended AFTER core's $data/$config/$filterCustomAttribute,
+        // nullable with an ObjectManager fallback, so `array $data` keeps core Product's
+        // parameter position. Core code paths (e.g. configurable child hydration) that
+        // instantiate a product positionally pass $data into the right slot; placing these
+        // required deps before $data shifted that slot and caused a constructor TypeError.
+        ?UrlFinderInterface $urlFinder = null,
+        ?CategoryCollectionFactory $categoryCollectionFactory = null,
+        ?ScopeConfigInterface $scopeConfig = null
     )
     {
+        $om = \Magento\Framework\App\ObjectManager::getInstance();
         $this->collectionFactory = $collectionFactory;
         $this->productAttributeRepository = $metadataService;
-        $this->urlFinder = $urlFinder;
-        $this->categoryCollectionFactory = $categoryCollectionFactory;
-        $this->scopeConfig = $scopeConfig;
+        $this->urlFinder = $urlFinder ?? $om->get(UrlFinderInterface::class);
+        $this->categoryCollectionFactory = $categoryCollectionFactory ?? $om->get(CategoryCollectionFactory::class);
+        $this->scopeConfig = $scopeConfig ?? $om->get(ScopeConfigInterface::class);
         parent::__construct($context, $registry, $extensionFactory, $customAttributeFactory, $storeManager, $metadataService, $url, $productLink, $itemOptionFactory, $stockItemFactory, $catalogProductOptionFactory, $catalogProductVisibility, $catalogProductStatus, $catalogProductMediaConfig, $catalogProductType, $moduleManager, $catalogProduct, $resource, $resourceCollection, $collectionFactory, $filesystem, $indexerRegistry, $productFlatIndexerProcessor, $productPriceIndexerProcessor, $productEavIndexerProcessor, $categoryRepository, $imageCacheFactory, $entityCollectionProvider, $linkTypeProvider, $productLinkFactory, $productLinkExtensionFactory, $mediaGalleryEntryConverterPool, $dataObjectHelper, $joinProcessor);
     }
 
