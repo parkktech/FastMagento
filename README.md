@@ -1,15 +1,42 @@
-# FastMagento: OpenSearch-Powered Magento 2 Search & PLP Optimization
+# FastMagento: OpenSearch Serving Layer for Magento 2
 
 ## Overview
-FastMagento replaces Magento's default ORM-based search, PLP, and PDP queries with OpenSearch, significantly improving performance and user experience. It provides an admin interface for configuring search attributes, layered navigation filters, and sorting options.
+FastMagento makes OpenSearch the primary **serving layer** for the storefront — products,
+category tree, PDP, search and layered navigation are hydrated from OpenSearch instead of
+Magento's EAV/ORM, with MySQL kept as the source of truth. Reads are transparent to third
+parties (a real `Magento\Catalog\Model\Product` / `Category` is hydrated from the OpenSearch
+document), base-Magento only, and cache/Varnish safe.
+
+The goal is to drive product/EAV SQL toward zero on the hot paths. On this catalog: a cold
+homepage dropped from ~21,610 to ~1,084 SQL queries; PDP and category pages serve with 0
+product/EAV SQL; the search page dropped 342 → 118.
 
 ## Features
-✅ **Full OpenSearch Integration** - Replaces Magento ORM for PLP, PDP, and Search  
-✅ **Real-Time AJAX Search** - Updates results dynamically  
-✅ **Faceted Navigation & Sorting** - Instant filter & sort updates  
-✅ **Optimized for BreezeFront** - Fully compatible with Swissup's lightweight framework  
-✅ **SEO-Optimized** - Structured data for better search engine visibility  
-✅ **Full Cache Support** - Pre-caches frequently searched queries
+✅ **OpenSearch product serving** — PDP, PLP and search hydrate real product objects from
+OpenSearch (no EAV load), including price, stock, media, tier/catalog-rule prices  
+✅ **Category serving layer** — a dedicated `magento2_categories` index powers the mega-menu,
+top-nav, breadcrumbs and layered-nav from OpenSearch (no `catalog_category_entity*` reads)  
+✅ **All product types** — simple, virtual, **downloadable** (links + samples rendered from
+the index), and **configurable** (swatch `jsonConfig` / option prices served from OpenSearch)  
+✅ **Real-time stock sync** — order placement, refunds/returns and MSI inventory-API writes
+reproject the affected products (and their configurable parents) into the index immediately  
+✅ **Read-path resilience** — warm-on-miss (a product absent from the index is added on first
+access) and native fallback whenever OpenSearch is unavailable  
+✅ **Full Cache / Varnish support** — serving is transparent to FPC and the layout cache
+
+## Indexers
+| Indexer id | Index | Serves |
+|---|---|---|
+| `fastmagento_product` | `magento2_products` | product docs (PDP / PLP / search / cart) |
+| `fastmagento_category` | `magento2_categories` | category tree, menu flags, url paths |
+
+Both track incremental changes via `mview` (subscriptions on the respective EAV tables);
+stock changes additionally sync in real time (see **Real-time stock sync** above).
+
+```bash
+bin/magento indexer:reindex fastmagento_product
+bin/magento indexer:reindex fastmagento_category
+```
 
 ---
 
@@ -59,7 +86,8 @@ bin/magento cache:flush
 ## **3️⃣ Verify OpenSearch Indexing**
 ### **Run a full reindex:**
 ```bash
-bin/magento indexer:reindex fastmagento_product_indexer
+bin/magento indexer:reindex fastmagento_product
+bin/magento indexer:reindex fastmagento_category
 ```
 ### **Check OpenSearch for a basic search:**
 ```bash
@@ -176,7 +204,14 @@ bin/magento cache:flush
 ---
 
 ## 🎉 FastMagento is Now Fully Installed!
-✅ **Magento ORM is fully removed from Search, PLP, and PDP**  
-✅ **OpenSearch powers all product queries**  
-✅ **AJAX-based filtering & sorting work smoothly**  
-✅ **BreezeFront compatibility ensures maximum performance**  
+✅ **Products, category tree, PDP and search served from OpenSearch**  
+✅ **PDP & category pages hit 0 product/EAV SQL; search 342 → 118**  
+✅ **Downloadable links/samples and configurable swatches served from the index**  
+✅ **Stock stays live on orders, returns and inventory-API writes**  
+
+## Known limitations / roadmap
+- **Configurable add-to-cart** through the OpenSearch-hydrated shell is not yet wired
+  (`getProductByAttributes` option→child matching); configurable PDPs render fully but the
+  add-to-cart handoff needs completion. Simple/virtual/downloadable add and order normally.
+- Grouped/bundle read paths are indexed but not yet fully exercised.
+- Multi-store: the serving index projects the default store view (per the product index).

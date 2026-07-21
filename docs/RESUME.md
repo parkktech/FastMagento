@@ -115,9 +115,27 @@ EAV)**. Fixes (all committed):
   real stock). New configurable/grouped/bundle test products need these indexes current.
 - Test tool: `docs/tools/create-downloadable-test.php` (downloadable); configurable test
   bed = HER-* bras (id 4369+).
-STILL TODO (Stage 3-4): add-to-cart with selected options (verify the shell add flow),
-out-of-stock-child greying (all children in stock now so untested), grouped/bundle types,
-and confirm price/image switching in a real browser (jsonConfig is correct; JS-rendered).
+✅ Out-of-stock child greying CONFIRMED (user-verified on PDP): an OOS child is dropped
+from getAllowProducts (659/660) but all 15 colors / 44 sizes still render; the swatch
+renderer greys the specific unavailable combo (show_out_of_stock=0 default).
+
+STILL TODO (Stage 3): **configurable add-to-cart via the shell fails** — addProduct returns
+"You need to choose options" because `Configurable::getProductByAttributes([93=>86,189=>89])`
+returns NULL for the shell (its getUsedProductCollection returns all 660, but the
+attribute-id→child match yields nothing). Native super_attribute matching path needs an
+override/fix for the OS-hydrated shell (mirror the getUsedProducts registry approach, or
+override getProductByAttributes to match against the OS child docs). Until then configurables
+can't be ordered. Simple/virtual/downloadable add + order fine. Also: grouped/bundle add,
+price/image switching visual check.
+
+## Real-time stock sync — DONE
+`Model/OpenSearch/StockSyncer` + observers (sales_order_place_after,
+sales_order_creditmemo_save_after) + plugins (SourceItemsSave/DeleteInterface) reproject
+affected products + their configurable/grouped/bundle parents into OpenSearch immediately,
+so qty / in-stock stay live on orders, returns and inventory-API writes (admin grid,
+imports, ERP, bin/magento inventory:*). Verified: inventory-API qty change hits the OS doc
+with no manual reindex; a child sync reprojects its parent's child_products stock. The
+stock WRITE path itself is native Magento (StockManagement) — the sync just keeps OS current.
 
 ## Configurable read-path — original DIAGNOSIS (resolved above)
 Configurable PDP (e.g. `/keira-banded-underwire-bra-1.html`, id 4369) renders 200 but shows
