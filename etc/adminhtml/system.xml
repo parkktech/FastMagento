@@ -40,11 +40,40 @@
                 </field>
             </group>
 
-            <!-- Instant Search -->
+            <!-- Instant Search + Relevance -->
             <group id="search" translate="label" sortOrder="20" showInDefault="1" showInWebsite="1" showInStore="1">
-                <label>Instant Search</label>
+                <label>Instant Search &amp; Relevance</label>
 
-                <field id="facet_attributes" translate="label comment" type="text" sortOrder="10" showInDefault="1" showInWebsite="1" showInStore="1">
+                <field id="searchable_attributes" translate="label comment" sortOrder="10" showInDefault="1" showInWebsite="1" showInStore="1">
+                    <label>Searchable Attributes &amp; Weights</label>
+                    <frontend_model>ParkkTech\FastMagento\Block\Adminhtml\System\Config\SearchableAttributes</frontend_model>
+                    <backend_model>Magento\Config\Model\Config\Backend\Serialized\ArraySerialized</backend_model>
+                    <comment>Attributes searched, ranked by weight (higher = stronger). One place to control what Magento otherwise hides in each attribute's Search Weight. Leave empty to use the built-in defaults (name, sku, description).</comment>
+                </field>
+
+                <field id="typo_tolerance" translate="label comment" type="select" sortOrder="20" showInDefault="1" showInWebsite="1" showInStore="1">
+                    <label>Typo Tolerance</label>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <comment>Fuzzy matching so misspellings still find results (like Algolia typo tolerance).</comment>
+                </field>
+
+                <field id="boost_in_stock" translate="label comment" type="select" sortOrder="30" showInDefault="1" showInWebsite="1" showInStore="1">
+                    <label>Boost In-Stock Products</label>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <comment>Rank in-stock products above out-of-stock ones (a custom-ranking tie-breaker).</comment>
+                </field>
+
+                <field id="custom_ranking_attribute" translate="label comment" type="text" sortOrder="40" showInDefault="1" showInWebsite="1" showInStore="1">
+                    <label>Custom Ranking Attribute</label>
+                    <comment>Optional numeric attribute used as a secondary ranking signal after text relevance (e.g. bestseller position, rating). Blank = relevance only.</comment>
+                </field>
+
+                <field id="custom_ranking_direction" translate="label" type="select" sortOrder="50" showInDefault="1" showInWebsite="1" showInStore="1">
+                    <label>Custom Ranking Direction</label>
+                    <source_model>ParkkTech\FastMagento\Model\Config\Source\RankingDirection</source_model>
+                </field>
+
+                <field id="facet_attributes" translate="label comment" type="text" sortOrder="60" showInDefault="1" showInWebsite="1" showInStore="1">
                     <label>Facet Attributes</label>
                     <comment>Comma-separated attribute codes to build search facets from (e.g. part_type,compatible_platforms). Must be filterable in the native search index. Category is always included.</comment>
                 </field>

@@ -32,7 +32,8 @@ class InstantSearch
         private readonly StoreManagerInterface $storeManager,
         private readonly ScopeConfigInterface $scopeConfig,
         private readonly PriceCurrencyInterface $priceCurrency,
-        private readonly WriteLog $writeLog
+        private readonly WriteLog $writeLog,
+        private readonly RelevanceConfig $relevanceConfig
     ) {
     }
 
@@ -77,6 +78,10 @@ class InstantSearch
                 '_source' => ['name', 'sku'],
                 'track_total_hits' => true,
             ];
+            $sort = $this->buildSort();
+            if ($sort) {
+                $body['sort'] = $sort;
+            }
             if ($withFacets) {
                 $body['aggs'] = $this->buildAggregations();
             }
@@ -109,15 +114,17 @@ class InstantSearch
      */
     private function buildQuery(string $query, array $filters): array
     {
-        // bool_prefix gives good as-you-type behaviour; boost name and sku heavily and fall
-        // back to the descriptive fields for recall.
-        $must = [[
-            'multi_match' => [
-                'query' => $query,
-                'type' => 'bool_prefix',
-                'fields' => ['name^5', 'sku^6', 'short_description', 'description'],
-            ],
-        ]];
+        // bool_prefix gives good as-you-type behaviour; field boosts come from the admin
+        // searchable-attributes weights (Algolia-style searchable attributes).
+        $matchClause = [
+            'query' => $query,
+            'type' => 'bool_prefix',
+            'fields' => $this->relevanceConfig->getBoostedFields(),
+        ];
+        if ($this->relevanceConfig->isTypoToleranceEnabled()) {
+            $matchClause['fuzziness'] = 'AUTO';
+        }
+        $must = [['multi_match' => $matchClause]];
 
         $filterClauses = [];
         foreach ($filters as $field => $values) {
@@ -132,7 +139,41 @@ class InstantSearch
         if ($filterClauses) {
             $bool['filter'] = $filterClauses;
         }
+
+        // Gently boost in-stock products above out-of-stock ones (keeps text relevance
+        // primary, unlike a hard sort).
+        if ($this->relevanceConfig->isBoostInStockEnabled()) {
+            return [
+                'function_score' => [
+                    'query' => ['bool' => $bool],
+                    'functions' => [[
+                        'filter' => ['term' => ['is_out_of_stock' => 0]],
+                        'weight' => 1.6,
+                    ]],
+                    'boost_mode' => 'multiply',
+                    'score_mode' => 'sum',
+                ],
+            ];
+        }
         return ['bool' => $bool];
+    }
+
+    /**
+     * Custom-ranking tie-breaker: text relevance first, then the configured numeric
+     * attribute (Algolia's custom ranking after textual relevance).
+     *
+     * @return array<int, mixed>
+     */
+    private function buildSort(): array
+    {
+        $attribute = $this->relevanceConfig->getCustomRankingAttribute();
+        if ($attribute === '') {
+            return [];
+        }
+        return [
+            '_score' => 'desc',
+            [$attribute => ['order' => $this->relevanceConfig->getCustomRankingDirection(), 'missing' => '_last', 'unmapped_type' => 'float']],
+        ];
     }
 
     /**
@@ -153,29 +194,10 @@ class InstantSearch
         $aggs = [
             'category' => ['terms' => ['field' => 'category_ids', 'size' => 15]],
         ];
-        foreach ($this->getFacetAttributes() as $code) {
+        foreach ($this->relevanceConfig->getFacetAttributes() as $code) {
             $aggs[$code] = ['terms' => ['field' => $code, 'size' => 15]];
         }
         return $aggs;
-    }
-
-    /**
-     * Attribute codes to build facets from. Admin-configurable
-     * (`fastmagento/search/facet_attributes`, comma-separated); defaults to the catalog
-     * search attributes if unset.
-     *
-     * @return string[]
-     */
-    private function getFacetAttributes(): array
-    {
-        $configured = (string) $this->scopeConfig->getValue(
-            'fastmagento/search/facet_attributes',
-            ScopeInterface::SCOPE_STORE
-        );
-        if (trim($configured) === '') {
-            return [];
-        }
-        return array_values(array_filter(array_map('trim', explode(',', $configured))));
     }
 
     /**
