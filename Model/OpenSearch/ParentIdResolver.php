@@ -34,6 +34,11 @@ class ParentIdResolver
      */
     public function getOsParentIds(int $childId): ?array
     {
+        // Empty/invalid id (freshly instantiated product objects, stale references):
+        // nothing to resolve and nothing to warm — a product with no id has no parent.
+        if ($childId <= 0) {
+            return [];
+        }
         if (array_key_exists($childId, $this->cache)) {
             return $this->cache[$childId];
         }
