@@ -76,8 +76,12 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
         StoreManagerInterface $storeManager,
         private ProductFactory $productFactory,
         private WriteLog $writeLog,
-        private ProductRepositoryInterface $productRepository
+        private ProductRepositoryInterface $productRepository,
+        private ?\Magento\Framework\Stdlib\DateTime\TimezoneInterface $localeDate = null
     ) {
+        $this->localeDate = $localeDate
+            ?? \Magento\Framework\App\ObjectManager::getInstance()
+                ->get(\Magento\Framework\Stdlib\DateTime\TimezoneInterface::class);
         $this->clientResolver = $clientResolver;
         $this->engineResolver = $engineResolver;
         $this->productCollectionFactory = $productCollectionFactory;
@@ -477,7 +481,9 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
         // ✅ Add Parent IDs for Simple Products (If Configurable)
         if ($product->getTypeId() === 'simple') {
             $productData['parent_ids'] = $this->getParentIds($product);
-            $productData['final_price'] = (float)$product->getFinalPrice();
+            // Rule-neutral base (see getBaseFinalPrice) so a StockSyncer reprojection triggered
+            // inside a frontend request doesn't bake the shopper's catalog-rule price into the doc.
+            $productData['final_price'] = $this->getBaseFinalPrice($product);
         }
 
         // ✅ Downloadable: index full link/sample data so the native PDP blocks render
@@ -728,6 +734,48 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
         return $this->configurableResource->getParentIdsByChild($product->getId());
     }
 
+    /**
+     * Rule-neutral base final price: the special price when it is active and lower than the
+     * regular price, otherwise the regular price. Deliberately does NOT call getFinalPrice()
+     * (which dispatches catalog_product_get_final_price → the per-product catalog-rule
+     * getRulePrice() query) nor apply catalog rules — those are stored per group in
+     * catalog_rule_prices and applied by the shell at read time. Tier prices are indexed
+     * separately and don't affect the qty-1 base shown on a product doc.
+     */
+    private function getBaseFinalPrice(\Magento\Catalog\Model\Product $product): float
+    {
+        $price = (float) $product->getPrice();
+        $special = $product->getSpecialPrice();
+
+        if ($special === null || $special === false || (float) $special <= 0.0 || (float) $special >= $price) {
+            return $price;
+        }
+
+        if ($this->isSpecialPriceActive($product)) {
+            return (float) $special;
+        }
+
+        return $price;
+    }
+
+    /**
+     * Whether a product's special price is within its (optional) from/to date window in the
+     * store timezone. Empty dates mean always active — matching core _applySpecialPrice.
+     */
+    private function isSpecialPriceActive(\Magento\Catalog\Model\Product $product): bool
+    {
+        try {
+            return $this->localeDate->isScopeDateInInterval(
+                $product->getStoreId(),
+                $product->getSpecialFromDate() ?: null,
+                $product->getSpecialToDate() ?: null
+            );
+        } catch (\Throwable $e) {
+            // On any date-parsing quirk, treat the special price as active (it is set + lower).
+            return true;
+        }
+    }
+
 
     public function getChildProducts(\Magento\Catalog\Model\Product $product)
     {
@@ -806,7 +854,14 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
                 'sku' => $child->getSku(),
                 'name' => $child->getName(),
                 'price' => (float)$child->getPrice(),
-                'final_price' => (float)$child->getFinalPrice(),
+                // Rule-NEUTRAL base final price (special-if-active else regular). We must NOT
+                // call $child->getFinalPrice() here: it dispatches catalog_product_get_final_price,
+                // and when the indexer runs inside a frontend request (StockSyncer on an inventory
+                // write during add-to-cart / order placement) the frontend catalog-rule observer
+                // fires getRulePrice() once PER child — the ~660-query N+1 that kills checkout —
+                // AND bakes the current shopper's group rule into a doc served to every group.
+                // Per-group rules live in catalog_rule_prices; final_price stays group-neutral.
+                'final_price' => $this->getBaseFinalPrice($child),
                 'special_price' => (float)$child->getSpecialPrice(),
                 'is_in_stock' => (bool)$stock['is_in_stock'],
                 'stock_qty' => (float)$stock['qty'],
