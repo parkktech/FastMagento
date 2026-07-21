@@ -36,6 +36,7 @@ class CategoryIndexer implements ActionInterface, MviewActionInterface
     /** Category attributes pulled in the single collection load. */
     private const ATTRIBUTES = [
         'name', 'is_active', 'include_in_menu', 'is_anchor', 'display_mode', 'url_key', 'url_path',
+        'all_children',
     ];
 
     public function __construct(
@@ -145,6 +146,7 @@ class CategoryIndexer implements ActionInterface, MviewActionInterface
             'display_mode' => (string) ($category->getDisplayMode() ?? ''),
             'url_key' => (string) ($category->getUrlKey() ?? ''),
             'url_path' => (string) ($category->getUrlPath() ?? ''),
+            'all_children' => (string) ($category->getData('all_children') ?? ''),
             'request_path' => $requestPaths[$entityId] ?? '',
             'store_id' => $storeId,
         ];
@@ -250,6 +252,7 @@ class CategoryIndexer implements ActionInterface, MviewActionInterface
                     'display_mode' => ['type' => 'keyword'],
                     'url_key' => ['type' => 'keyword'],
                     'url_path' => ['type' => 'keyword'],
+                    'all_children' => ['type' => 'keyword'],
                     'request_path' => ['type' => 'keyword'],
                     'store_id' => ['type' => 'integer'],
                 ],

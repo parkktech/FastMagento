@@ -66,6 +66,16 @@
                 sortOrder="10"/>
     </type>
 
+    <!-- Frontend-only: serve category collection attribute values (name/url_key/is_active/
+         include_in_menu/is_anchor/all_children) from OpenSearch, skipping the native
+         catalog_category_entity_* UNION loads. Covers mega-menu, top-nav, breadcrumb
+         parents and layered-nav children; falls back to native on any unservable attr/item. -->
+    <type name="Magento\Catalog\Model\ResourceModel\Category\Collection">
+        <plugin name="fastmagento_category_attribute_load"
+                type="ParkkTech\FastMagento\Plugin\CategoryAttributeLoadPlugin"
+                sortOrder="10"/>
+    </type>
+
     <!-- Frontend-only: drop deleted/disabled/hidden products from the bestsellers report so
          storefront widgets never surface unshoppable products. Admin reports keep every row
          (this plugin is scoped to the frontend area). -->
