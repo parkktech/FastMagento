@@ -58,6 +58,14 @@
                 sortOrder="10"/>
     </type>
 
+    <!-- Frontend-only: collapse the per-category url_rewrite N+1 (mega-menu / breadcrumbs /
+         category tree each call $category->getUrl()) into one batched query per store. -->
+    <type name="Magento\UrlRewrite\Model\UrlFinderInterface">
+        <plugin name="fastmagento_category_url_finder"
+                type="ParkkTech\FastMagento\Plugin\CategoryUrlFinderPlugin"
+                sortOrder="10"/>
+    </type>
+
     <!-- Frontend-only: drop deleted/disabled/hidden products from the bestsellers report so
          storefront widgets never surface unshoppable products. Admin reports keep every row
          (this plugin is scoped to the frontend area). -->
