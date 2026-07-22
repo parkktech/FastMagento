@@ -57,6 +57,10 @@ xxxl, 3xl, triple xl</synonyms>
                      preload and rely on the placement-time CheckItemsQuantity gate. Requires
                      os_serve_quote_items on. Changes checkout stock behaviour; opt-in only. -->
                 <optimistic_stock>0</optimistic_stock>
+                <!-- Line-item name for configurable products on cart/mini-cart/checkout:
+                     parent = the configurable name (Magento default), child = the purchased
+                     simple's name. Default parent = no change. -->
+                <configurable_line_name>parent</configurable_line_name>
             </cart>
         </fastmagento>
     </default>

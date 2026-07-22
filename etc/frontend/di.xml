@@ -166,6 +166,7 @@
     </type>
     <type name="Magento\Quote\Model\Quote\Item">
         <plugin name="inject_price_on_get_product" type="ParkkTech\FastMagento\Plugin\Quote\QuoteItemPlugin" />
+        <plugin name="fastmagento_configurable_line_name" type="ParkkTech\FastMagento\Plugin\Quote\ConfigurableLineNamePlugin" />
     </type>
 
     <!-- The quote-item OS-serving preference moved to the GLOBAL etc/di.xml so it also covers
