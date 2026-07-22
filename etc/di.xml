@@ -28,6 +28,17 @@
                 sortOrder="100"/>
     </type>
 
+    <!-- Keep the OpenSearch index's catalog-rule prices live: after Magento recomputes
+         catalogrule_product_price (rule save, per-product, or the nightly apply-all), patch the
+         affected OS docs' catalog_rule_prices map straight away so the OS-served cart is always
+         correct without a manual reindex. Best-effort; falls back to a full reproject on any
+         miss. See CatalogRuleSyncer. -->
+    <type name="Magento\CatalogRule\Model\Indexer\IndexBuilder">
+        <plugin name="fastmagento_rule_price_sync"
+                type="ParkkTech\FastMagento\Plugin\CatalogRule\RulePriceSyncPlugin"
+                sortOrder="100"/>
+    </type>
+
     <!-- OS-serve the quote-item product load (cart/checkout). GLOBAL so it's active for the
          customer-facing checkout REST/GraphQL calls too, not just the frontend cart page — the
          area is gated inside the class (isServableArea: frontend/webapi_rest/graphql; adminhtml
