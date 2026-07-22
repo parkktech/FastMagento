@@ -4,32 +4,30 @@ declare(strict_types=1);
 
 namespace ParkkTech\FastMagento\Model\Ai;
 
-use Magento\Framework\App\Config\ScopeConfigInterface;
-use Magento\Framework\App\Config\Storage\WriterInterface;
-use Magento\Framework\App\Config\ReinitableConfigInterface;
 use Magento\Framework\App\ResourceConnection;
+use ParkkTech\FastMagento\Model\Search\SynonymImporter;
 
 /**
- * Builds a search thesaurus for THIS store's catalogue: it reads the real vocabulary the store
- * sells (select/multiselect/swatch attribute option labels + category names), asks the model to
- * map common shopper words to those terms, then merges the result into the
- * fastmagento/search/synonyms config (which drives both fulltext relevance and swatch
+ * Builds a search thesaurus for THIS store's catalogue by scraping the real vocabulary the store
+ * sells — select/multiselect/swatch attribute option labels, category names, AND a sample of
+ * product names — then asking the model to (a) map common shopper words to those terms and
+ * (b) surface grammatical/compound variants the copy actually uses (front end ↔ frontend,
+ * back end ↔ rear end, a-arm ↔ a arm, hyphenation/spacing/plural pairs). The result merges into
+ * the fastmagento/search/synonyms config (which drives fulltext relevance and swatch
  * pre-selection). "Generate from your website" — no hand-curation.
  */
 class ThesaurusGenerator
 {
-    private const XML_SYNONYMS = 'fastmagento/search/synonyms';
     private const MAX_OPTIONS_PER_ATTRIBUTE = 200;
     private const MAX_CATEGORIES = 300;
+    private const MAX_PRODUCT_SAMPLES = 400;
     private const MAX_GROUPS = 120;
 
     public function __construct(
         private readonly ResourceConnection $resource,
-        private readonly ScopeConfigInterface $scopeConfig,
-        private readonly WriterInterface $configWriter,
-        private readonly ReinitableConfigInterface $reinitableConfig,
         private readonly AnthropicClient $client,
-        private readonly AiConfig $aiConfig
+        private readonly AiConfig $aiConfig,
+        private readonly SynonymImporter $synonymImporter
     ) {
     }
 
@@ -55,16 +53,16 @@ class ThesaurusGenerator
             8000
         );
 
-        $groups = $this->cleanGroups($result['groups'] ?? []);
+        $groups = $this->synonymImporter->clean($result['groups'] ?? []);
         if (!$groups) {
             throw new \RuntimeException('The model did not return any usable synonym groups.');
         }
 
-        return $this->merge($groups) + ['terms_scanned' => $termCount];
+        return $this->synonymImporter->merge($groups) + ['terms_scanned' => $termCount];
     }
 
     /**
-     * @return array{attributes:array<string,string[]>, categories:string[]}
+     * @return array{attributes:array<string,string[]>, categories:string[], products:string[]}
      */
     private function collectVocabulary(): array
     {
@@ -148,15 +146,66 @@ class ThesaurusGenerator
             }
         }
 
-        return ['attributes' => $attributes, 'categories' => $categories];
+        // Product-name sample — the raw copy where grammatical/compound variants actually live
+        // ("front end", "rock racer", hyphenated part names). Prioritise multi-word / hyphenated
+        // names, which are the ones that carry spacing/compound complexities worth mapping.
+        $products = $this->collectProductNames($connection, min($budget - $used, self::MAX_PRODUCT_SAMPLES));
+
+        return ['attributes' => $attributes, 'categories' => $categories, 'products' => $products];
     }
 
     /**
-     * @param array{attributes:array<string,string[]>, categories:string[]} $vocabulary
+     * A bounded sample of product names, multi-word / hyphenated first (those hold the
+     * grammatical complexities the tool exists to find), then filling with the rest.
+     *
+     * @param \Magento\Framework\DB\Adapter\AdapterInterface $connection
+     * @return string[]
+     */
+    private function collectProductNames($connection, int $limit): array
+    {
+        if ($limit < 1) {
+            return [];
+        }
+        $nameAttr = $connection->fetchOne(
+            $connection->select()
+                ->from(['a' => $this->resource->getTableName('eav_attribute')], ['attribute_id'])
+                ->join(['et' => $this->resource->getTableName('eav_entity_type')], 'et.entity_type_id = a.entity_type_id', [])
+                ->where('et.entity_type_code = ?', 'catalog_product')
+                ->where('a.attribute_code = ?', 'name')
+        );
+        if (!$nameAttr) {
+            return [];
+        }
+
+        $select = $connection->select()
+            ->from(['v' => $this->resource->getTableName('catalog_product_entity_varchar')], ['value'])
+            ->where('v.attribute_id = ?', (int) $nameAttr)
+            ->where('v.store_id = ?', 0)
+            ->where('v.value IS NOT NULL')
+            // multi-word / hyphenated names first (REGEXP: a space or hyphen present)
+            ->order(new \Zend_Db_Expr("(v.value REGEXP '[ -]') DESC"))
+            ->limit($limit * 3);
+
+        $names = [];
+        foreach ($connection->fetchCol($select) as $name) {
+            $name = trim((string) $name);
+            if ($name === '' || isset($names[mb_strtolower($name)])) {
+                continue;
+            }
+            $names[mb_strtolower($name)] = $name;
+            if (count($names) >= $limit) {
+                break;
+            }
+        }
+        return array_values($names);
+    }
+
+    /**
+     * @param array{attributes:array<string,string[]>, categories:string[], products:string[]} $vocabulary
      */
     private function countTerms(array $vocabulary): int
     {
-        $count = count($vocabulary['categories']);
+        $count = count($vocabulary['categories']) + count($vocabulary['products']);
         foreach ($vocabulary['attributes'] as $labels) {
             $count += count($labels);
         }
@@ -164,7 +213,7 @@ class ThesaurusGenerator
     }
 
     /**
-     * @param array{attributes:array<string,string[]>, categories:string[]} $vocabulary
+     * @param array{attributes:array<string,string[]>, categories:string[], products:string[]} $vocabulary
      */
     private function buildPrompt(array $vocabulary): string
     {
@@ -174,23 +223,23 @@ class ThesaurusGenerator
         return <<<PROMPT
 You are an e-commerce search relevance expert building a synonym thesaurus for a Magento storefront.
 
-Below is the store's actual searchable vocabulary: option labels grouped by attribute (colours, sizes, materials, styles, fitment, etc.) and category names. These are the real terms shoppers will find in the catalogue.
+Below is the store's actual searchable vocabulary scraped from its own content: option labels grouped by attribute (colours, sizes, materials, styles, fitment, etc.), category names, and a sample of real product names. These are the exact terms and phrasings the catalogue uses.
 
 VOCABULARY:
 {$vocabJson}
 
-Produce synonym groups that map the words REAL SHOPPERS TYPE to the store's actual terms, so a search for a shopper's word also finds the catalogue term. Focus on:
-- Colour families and alternate colour names (e.g. a "Merlot" option -> burgundy, wine, maroon).
-- Size abbreviations and spelled-out forms (S/small, XL/extra large, numeric/lettered sizes).
-- Materials and their common variants and misspellings.
-- Product types / categories and their everyday or regional names and abbreviations.
-- Common misspellings and British/American spelling pairs.
+Produce synonym groups that map the words REAL SHOPPERS TYPE to the store's actual terms, so a search for a shopper's word also finds the catalogue term. Cover:
+- GRAMMATICAL / COMPOUND VARIANTS of multi-word phrases the product names actually use — this is the most valuable output. A shopper may type a phrase spaced, joined, or hyphenated differently than the copy. If a product name contains "front end", emit ["front end","frontend","front-end"]; likewise "back end"->"backend"/"rear end", "a-arm"->"a arm", "light bar"->"lightbar", "t-shirt"->"tshirt"/"tee". Read the product names and generate these pairs for every multi-word / hyphenated phrase that a buyer would plausibly type another way.
+- Colour families and alternate colour names (a "Merlot" option -> burgundy, wine, maroon).
+- Size abbreviations and spelled-out forms (S/small, XL/extra large).
+- Materials, product-type nicknames, regional names, abbreviations, common misspellings, and British/American spelling pairs.
 
 RULES:
 - Each group is a list of interchangeable terms. Every group MUST contain at least one term that appears verbatim (case-insensitive) in the vocabulary above — never invent groups of words the store doesn't use.
-- All terms lowercase. Prefer single words; short two-word phrases are allowed.
-- NEVER put two DIFFERENT real option labels from the same attribute in one group (e.g. do not make "Red" and "Pink" synonyms) — that would make the store's own distinct options collide.
-- Do not restate the obvious identity (a term is always a synonym of itself); every group needs at least two DIFFERENT terms.
+- CRITICAL — keep every term DISTINCTIVE. NEVER build a group around a common word that appears widely across unrelated products (e.g. "side", "front", "kit", "set", "black", "pro"). A group like ["side by side","utv"] is HARMFUL because matching the common word "side" then pulls in every "...side" product. If a useful buyer phrase contains a common word, DROP it from the thesaurus (it is handled separately per-product); only emit groups whose every term is specific enough to identify the product type.
+- All terms lowercase. Single words or short 2-3 word phrases.
+- NEVER put two DIFFERENT real option labels from the same attribute in one group (do not make "Red" and "Pink" synonyms) — that collides the store's own distinct options.
+- Every group needs at least two DIFFERENT terms; do not restate a term as its own synonym.
 - Return at most {$maxGroups} of the highest-value groups.
 PROMPT;
     }
@@ -214,108 +263,5 @@ PROMPT;
             'required' => ['groups'],
             'additionalProperties' => false,
         ];
-    }
-
-    /**
-     * Normalise the model's groups: lowercase, trim, dedupe within a group, drop groups with
-     * fewer than two distinct terms.
-     *
-     * @param mixed $rawGroups
-     * @return string[][]
-     */
-    private function cleanGroups($rawGroups): array
-    {
-        $groups = [];
-        foreach ((array) $rawGroups as $group) {
-            $terms = [];
-            foreach ((array) $group as $term) {
-                // Commas and newlines are the group/line separators in the synonyms config, so
-                // a term containing either would corrupt the round-trip — strip them. Bound the
-                // length as a guard against a pathological model response.
-                $term = trim(mb_strtolower(str_replace([',', "\r", "\n"], ' ', (string) $term)));
-                $term = trim(preg_replace('/\s+/', ' ', $term) ?? '');
-                if ($term === '' || mb_strlen($term) > 40) {
-                    continue;
-                }
-                if (!in_array($term, $terms, true)) {
-                    $terms[] = $term;
-                }
-            }
-            if (count($terms) >= 2) {
-                $groups[] = $terms;
-            }
-        }
-        return array_slice($groups, 0, self::MAX_GROUPS);
-    }
-
-    /**
-     * Merge new groups into the existing synonyms config without clobbering hand-curated lines:
-     * a new group that shares a term with an existing group unions into it; otherwise it's
-     * appended. Saves the result and reinitialises config so it takes effect immediately.
-     *
-     * @param string[][] $newGroups
-     * @return array{added:int, merged:int, total:int, preview:string[]}
-     */
-    private function merge(array $newGroups): array
-    {
-        $existing = $this->parseGroups((string) $this->scopeConfig->getValue(self::XML_SYNONYMS));
-        $added = 0;
-        $merged = 0;
-
-        foreach ($newGroups as $group) {
-            $targetIndex = null;
-            foreach ($existing as $i => $existingGroup) {
-                if (array_intersect($group, $existingGroup)) {
-                    $targetIndex = $i;
-                    break;
-                }
-            }
-
-            if ($targetIndex === null) {
-                $existing[] = $group;
-                $added++;
-                continue;
-            }
-
-            $before = $existing[$targetIndex];
-            $existing[$targetIndex] = array_values(array_unique(array_merge($before, $group)));
-            if (count($existing[$targetIndex]) > count($before)) {
-                $merged++;
-            }
-        }
-
-        $text = implode("\n", array_map(static fn ($g) => implode(', ', $g), $existing));
-        $this->configWriter->save(self::XML_SYNONYMS, $text);
-        $this->reinitableConfig->reinit();
-
-        return [
-            'added' => $added,
-            'merged' => $merged,
-            'total' => count($existing),
-            'preview' => array_map(
-                static fn ($g) => implode(', ', $g),
-                array_slice($newGroups, 0, 12)
-            ),
-        ];
-    }
-
-    /**
-     * Parse a synonyms textarea value into groups of terms.
-     *
-     * @return string[][]
-     */
-    private function parseGroups(string $raw): array
-    {
-        $groups = [];
-        foreach (preg_split('/\r\n|\r|\n/', $raw) ?: [] as $line) {
-            $terms = array_values(array_unique(array_filter(array_map(
-                static fn ($t) => trim(mb_strtolower($t)),
-                explode(',', $line)
-            ))));
-            if (count($terms) >= 2) {
-                $groups[] = $terms;
-            }
-        }
-        return $groups;
     }
 }
