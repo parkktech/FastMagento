@@ -26,6 +26,7 @@ use Magento\Store\Model\ScopeInterface;
  */
 class OptimisticObserverSkipPlugin
 {
+    private const XML_PATH_FAST_CHECKOUT = 'fastmagento/cart/enable_fast_checkout';
     private const XML_PATH_OS_SERVE = 'fastmagento/cart/os_serve_quote_items';
     private const XML_PATH_OPTIMISTIC_STOCK = 'fastmagento/cart/optimistic_stock';
 
@@ -51,9 +52,10 @@ class OptimisticObserverSkipPlugin
 
     private function shouldSkip(): bool
     {
-        if (!$this->scopeConfig->isSetFlag(self::XML_PATH_OS_SERVE, ScopeInterface::SCOPE_STORE)
-            || !$this->scopeConfig->isSetFlag(self::XML_PATH_OPTIMISTIC_STOCK, ScopeInterface::SCOPE_STORE)
-        ) {
+        $fastCheckout = $this->scopeConfig->isSetFlag(self::XML_PATH_FAST_CHECKOUT, ScopeInterface::SCOPE_STORE);
+        $osServe = $fastCheckout || $this->scopeConfig->isSetFlag(self::XML_PATH_OS_SERVE, ScopeInterface::SCOPE_STORE);
+        $optimistic = $fastCheckout || $this->scopeConfig->isSetFlag(self::XML_PATH_OPTIMISTIC_STOCK, ScopeInterface::SCOPE_STORE);
+        if (!$osServe || !$optimistic) {
             return false;
         }
         try {

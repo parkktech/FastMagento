@@ -50,6 +50,10 @@ xxxl, 3xl, triple xl</synonyms>
                 <max_terms>1200</max_terms>
             </ai>
             <cart>
+                <!-- Master toggle. Default OFF. When ON it enables OS-serving + optimistic stock
+                     together — the pair that makes configurable-heavy checkout fast. The
+                     individual (advanced) toggles below can still turn either on by itself. -->
+                <enable_fast_checkout>0</enable_fast_checkout>
                 <!-- Default OFF: OS-serving the quote-item collection is checkout code; every
                      commit stays inert until this is explicitly enabled in a store. -->
                 <os_serve_quote_items>0</os_serve_quote_items>

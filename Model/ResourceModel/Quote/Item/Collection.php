@@ -41,6 +41,7 @@ use ParkkTech\FastMagento\Helper\ShellProductBuilder;
  */
 class Collection extends \Magento\Quote\Model\ResourceModel\Quote\Item\Collection
 {
+    private const XML_PATH_FAST_CHECKOUT = 'fastmagento/cart/enable_fast_checkout';
     private const XML_PATH_OS_SERVE = 'fastmagento/cart/os_serve_quote_items';
     private const XML_PATH_OPTIMISTIC_STOCK = 'fastmagento/cart/optimistic_stock';
 
@@ -333,7 +334,18 @@ class Collection extends \Magento\Quote\Model\ResourceModel\Quote\Item\Collectio
 
     private function isOsServeEnabled(): bool
     {
-        return $this->osScopeConfig->isSetFlag(self::XML_PATH_OS_SERVE, ScopeInterface::SCOPE_STORE);
+        return $this->isFastCheckoutEnabled()
+            || $this->osScopeConfig->isSetFlag(self::XML_PATH_OS_SERVE, ScopeInterface::SCOPE_STORE);
+    }
+
+    /**
+     * Master "Enable Fast Checkout" toggle — turning it on implies both OS-serve and optimistic
+     * stock (the pair that flattens configurable-cart checkout). The individual advanced flags
+     * can still enable either on its own.
+     */
+    private function isFastCheckoutEnabled(): bool
+    {
+        return $this->osScopeConfig->isSetFlag(self::XML_PATH_FAST_CHECKOUT, ScopeInterface::SCOPE_STORE);
     }
 
     /**
@@ -343,7 +355,8 @@ class Collection extends \Magento\Quote\Model\ResourceModel\Quote\Item\Collectio
      */
     private function isOptimisticStockEnabled(): bool
     {
-        return $this->osScopeConfig->isSetFlag(self::XML_PATH_OPTIMISTIC_STOCK, ScopeInterface::SCOPE_STORE);
+        return $this->isFastCheckoutEnabled()
+            || $this->osScopeConfig->isSetFlag(self::XML_PATH_OPTIMISTIC_STOCK, ScopeInterface::SCOPE_STORE);
     }
 
     /**

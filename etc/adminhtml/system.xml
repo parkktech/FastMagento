@@ -119,19 +119,24 @@
 
             <!-- Cart / Checkout Optimization -->
             <group id="cart" translate="label" sortOrder="28" showInDefault="1" showInWebsite="1" showInStore="1">
-                <label>Cart / Checkout Optimization</label>
+                <label>Fast Checkout</label>
+
+                <field id="enable_fast_checkout" translate="label comment" type="select" sortOrder="5" showInDefault="1" showInWebsite="1" showInStore="1">
+                    <label>Enable Fast Checkout</label>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <comment><![CDATA[<strong>The one setting to turn on.</strong> Serves cart/checkout line products (and configurable variants) from the OpenSearch index instead of the native ~217-query product collection, and skips the redundant per-load stock revalidation. This is what removes the multi-second cost of configurable products at checkout. Order placement still re-checks salable quantity by SKU, so it cannot oversell; missing/partial index products fall back to the native path automatically. <strong>Reindex and place a test order before enabling in production.</strong> Turning this on is equivalent to enabling both advanced toggles below.]]></comment>
+                </field>
 
                 <field id="os_serve_quote_items" translate="label comment" type="select" sortOrder="10" showInDefault="1" showInWebsite="1" showInStore="1">
-                    <label>Serve Quote Items from OpenSearch</label>
+                    <label>Advanced: Serve Quote Items from OpenSearch</label>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
-                    <comment><![CDATA[Hydrate cart/checkout line products from the OpenSearch index instead of the native ~217-query product collection. Hard native fallback for any product missing/partial in the index, custom-option carts, and bundle/grouped products, so it never half-serves a cart. Live stock is still loaded natively (no overselling). <strong>Test on a real order before enabling in production.</strong>]]></comment>
+                    <comment><![CDATA[<em>Advanced / granular control — "Enable Fast Checkout" above already turns this on.</em> Hydrate cart/checkout line products from the OpenSearch index instead of the native ~217-query product collection. Hard native fallback for any product missing/partial in the index, custom-option carts, and bundle/grouped products, so it never half-serves a cart. Live stock is still loaded natively (no overselling).]]></comment>
                 </field>
 
                 <field id="optimistic_stock" translate="label comment" type="select" sortOrder="20" showInDefault="1" showInWebsite="1" showInStore="1">
-                    <label>Optimistic Stock (skip redundant pre-placement checks)</label>
+                    <label>Advanced: Optimistic Stock (skip redundant pre-placement checks)</label>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
-                    <depends><field id="os_serve_quote_items">1</field></depends>
-                    <comment><![CDATA[Serve cart/checkout stock from the live-indexed OpenSearch data and skip the redundant per-load MySQL stock preload. Order placement still re-checks salable quantity by SKU (MSI reservations) and rejects a truly out-of-stock order, so this cannot oversell. Trade-off: if the index is briefly stale, a shopper may reach the final placement step before being told an item is unavailable. Requires "Serve Quote Items" on. <strong>Validate with a real order first.</strong>]]></comment>
+                    <comment><![CDATA[<em>Advanced / granular control — "Enable Fast Checkout" above already turns this on.</em> Serve cart/checkout stock from the live-indexed OpenSearch data and skip the redundant per-load MySQL stock preload. Order placement still re-checks salable quantity by SKU (MSI reservations) and rejects a truly out-of-stock order, so this cannot oversell. Trade-off: if the index is briefly stale, a shopper may reach the final placement step before being told an item is unavailable. <strong>Validate with a real order first.</strong>]]></comment>
                 </field>
 
                 <field id="fast_stock_sync" translate="label comment" type="select" sortOrder="25" showInDefault="1" showInWebsite="1" showInStore="1">
