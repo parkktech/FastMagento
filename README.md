@@ -118,7 +118,7 @@ SQL lookup.
 
 The cart/checkout **HTML render** cost is dominated by hydrating each configurable line item
 (parent + used-products + per-source MSI salability), so native checkout time grows with the
-number of configurable line items. **Fast Checkout** (`Enable Fast Checkout`, off by default)
+number of configurable line items. **Fast Checkout** (`Enable Fast Checkout`, **on by default**)
 serves those line products from the index and flattens it. Warm render, this storefront:
 
 | Cart | Native | Fast Checkout | 
@@ -139,13 +139,25 @@ native path automatically.
 
 ## Features
 
-- **Product serving** — PDP, PLP and search hydrate real product objects from OpenSearch
-  with no EAV load: price, special/tier/catalog-rule prices, stock, media gallery,
-  category names and custom attributes.
-- **Category serving layer** — a dedicated `fastmagento_category` indexer
-  (`magento2_categories`) powers the mega-menu, top navigation, breadcrumbs and layered
-  navigation from OpenSearch, eliminating `catalog_category_entity*` reads. A batched URL
-  finder also collapses the per-category `url_rewrite` N+1.
+- **Product serving** — every product read on the storefront (PDP, cart, related/up-sell,
+  search hydration, product sliders) is answered by a `ShellNoEavProduct`: a real
+  `Magento\Catalog\Model\Product` subclass whose `load()` is a no-op and whose getters return
+  from the indexed `_source`. This removes the per-product
+  `catalog_product_entity_{varchar,int,decimal,text,datetime}` EAV multi-table load and its
+  option-label lookups. It serves price, special/tier/catalog-rule prices (per customer group),
+  stock, media gallery, category names, URLs and every custom attribute — with select/multiselect
+  values pre-resolved to **labels** in the index.
+- **Category serving layer** — a dedicated `fastmagento_category` indexer (`magento2_categories`)
+  projects the whole tree; a request-scoped provider pulls it in **one** search and answers the
+  mega-menu, top navigation, breadcrumbs and layered-navigation **category data** from memory,
+  eliminating the `catalog_category_entity_{varchar,int,text}` UNION attribute loads (**0 category
+  EAV reads**). A batched URL finder collapses the per-category `url_rewrite` N+1 (~108 queries →
+  one per store). *(The category page's product grid still renders natively for now; the search
+  results page below is the fully OS-served, live listing.)*
+- **Related / up-sell / cross-sell & product sliders** — link blocks and slider widgets hydrate
+  from OpenSearch (one link-graph query + one `mget`), and child→parent lookups resolve from the
+  indexed `parent_ids` — removing the per-item EAV load, the per-card `url_rewrite` N+1, and the
+  `catalog_product_super_link` parent N+1.
 - **All product types**
   - Simple & Virtual — fully served.
   - **Downloadable** — links and samples are indexed and hydrated into the native
@@ -153,24 +165,29 @@ native path automatically.
   - **Configurable** — swatch `jsonConfig`, per-option prices and swatch config are served
     from OpenSearch; the PDP renders the full swatch UI. Out-of-stock option combinations
     still render (greyed), matching Magento's default behaviour.
-- **Instant search + autocomplete** — an as-you-type header dropdown (product cards +
-  category suggestions) and a search results page whose **attribute facets**, product grid
-  and pagination re-render live from OpenSearch with no page reload (Algolia-style). Facets
-  (category + configured attributes, e.g. Part Type / Color / Link Style) and their option
-  **labels are resolved entirely from the index** — no DB/EAV lookup on the request path.
-  Configure via `FastMagento > Search > Facet Attributes`. Endpoints:
+- **Realtime instant search + live layered navigation** — an as-you-type header dropdown
+  (product cards + category suggestions) **and** a fully live search results page: the product
+  grid, pagination **and the layered-navigation facets** all re-render in place from OpenSearch
+  with **no page reload** (Algolia-style) as you type, tick a filter, or page — the URL updates
+  via `history.replaceState`. Facets (category + configured attributes, e.g. Part Type / Color /
+  Link Style) are built from OpenSearch aggregations and their option **labels come straight from
+  the index** — no DB/EAV lookup on the request path. The native Magento layered nav is replaced
+  outright. Configure via `FastMagento > Search > Facet Attributes`. Endpoints:
   `/fastmagento/search/suggest` and `/fastmagento/search/instant`.
-- **Fast Checkout** (opt-in, off by default) — serves cart/checkout line products, including
-  configurable variants, from the index instead of the native ~217-query product collection,
-  and skips the redundant per-load stock revalidation. Removes the multi-second cost of
-  configurable line items at checkout (see Benchmarks). One admin toggle,
-  `FastMagento > Fast Checkout > Enable Fast Checkout`; order placement still gates stock by
-  SKU so it cannot oversell, and anything not fully in the index falls back to native.
+- **Fast Checkout** (**on by default**) — serves cart/checkout line products, including
+  configurable variants, from the index instead of the native ~217-query quote-item collection
+  build (product/EAV ≈119 + MSI stock ≈71 + downloadable ≈27), and skips the redundant per-load
+  stock revalidation. Removes the multi-second cost of configurable line items at checkout (see
+  Benchmarks). One master toggle, `FastMagento > Fast Checkout > Enable Fast Checkout`, turns on
+  the whole fast pipeline (OS-serve + optimistic stock + fast stock sync); order placement still
+  gates stock by SKU so it cannot oversell, and anything not fully in the index falls back to
+  native automatically.
 - **Real-time stock sync** — order placement, refunds/returns and MSI inventory-API writes
-  reproject the affected products (and their configurable/grouped/bundle parents) into the
-  index immediately, so quantity and in-stock status stay live. An optional **fast stock
-  sync** patches only the stock fields of the affected docs (instead of a full reprojection)
-  for much lower cost on large configurables.
+  reproject the affected products (and their configurable/grouped/bundle parents) into the index
+  immediately — after `fastcgi_finish_request`, so the shopper never waits — keeping quantity and
+  in-stock status live between reindexes. **Fast stock sync** (on with Fast Checkout) patches only
+  the stock fields of the affected docs via one `mget` + bulk update instead of a full EAV
+  reprojection, and falls back to a full reproject for any doc missing/partial in the index.
 - **Always-ready index** — catalog-rule recalculations (rule save / nightly apply-all) patch
   the affected docs' per-group rule prices into the index automatically, so the OS-served
   cart is correct without a manual reindex.
@@ -178,6 +195,38 @@ native path automatically.
   first access, self-healing like a cache miss) and automatic native fallback whenever
   OpenSearch is unavailable.
 - **Cache/Varnish transparent** — serving happens beneath FPC and the layout cache.
+
+---
+
+## What it serves from OpenSearch — and the SQL it removes
+
+On the storefront hot path, product and category reads resolve from an OpenSearch document instead
+of Magento's EAV/ORM. Each mechanism replaces a specific native query pattern — the ones whose cost
+grows with catalog size, attribute count and configurable variant count. The read path is
+intercepted at the single `Magento\Catalog\Model\Product::load` choke point (and the product
+repository, product/link collections, category collection, price models, stock registry and the
+quote-item collection), so third-party code keeps receiving a real product/category object. *(The
+write path still runs set-based SQL at **index** time; the elimination is on the **read/serving**
+path.)*
+
+| Serving mechanism | What it answers from the index | Native SQL it removes |
+|---|---|---|
+| `ShellNoEavProduct` — no-op `load()`, getters from `_source` | Every product attribute read on PDP / cart / listing | `catalog_product_entity_{varchar,int,decimal,text,datetime}` EAV joins + option-label lookups |
+| Per-customer-group price maps on the doc + `TierPrice`/`CatalogRulePrice`/`SpecialPrice` overrides | Catalog-rule, tier and special price, resolved per customer group | per-child `catalogrule_product_price` + `catalog_product_entity_tier_price` **N+1** — the ~660-query cost on a 660-variant configurable |
+| Configurable child shells in registry + `LowestPriceOptionsProvider` override | Configurable "from" price, options, add-to-cart variant match | the native used-product collection load + its per-child rule/tier N+1 |
+| Category tree pulled in **one** search + attribute-load plugin | Mega-menu, top-nav, breadcrumbs, layered-nav category data | `catalog_category_entity_{varchar,int,text}` UNION attribute loads → **0 category EAV reads** |
+| Indexed `request_path` (products) + batched category URL finder | Product-card and category URLs | per-item `url_rewrite` finder **N+1** (~108 queries) → one batched query per store |
+| `OpenSearchStockRegistry` + indexed `stock_item` | Stock item / status on PDP and cart | per-product `cataloginventory_stock_item` loads; per-line `WHERE sku=?` MSI preload |
+| Indexed `parent_ids` + `ParentIdResolver` | Child→parent resolution for sliders / widgets | `catalog_product_super_link` / `catalog_product_link` parent N+1 |
+| Indexed `swatch_options` + `configurable_options_<id>` | PDP swatch `jsonConfig` | `eav_attribute_option` / `_value` / `_swatch` per-option lookups |
+| Indexed downloadable links / samples | Downloadable PDP blocks | `downloadable_link` / `downloadable_sample` loads |
+| OS-served quote-item collection (Fast Checkout) | Cart / checkout line hydration | the native ~217-query `_assignProducts` build (EAV ≈119 + MSI stock ≈71 + downloadable ≈27) |
+| Search relevance + facets from the native fulltext index | Instant search results + live layered nav | the layered-navigation attribute/option SQL and category/EAV reads behind native search |
+
+Every mechanism is **guarded**: a doc that is missing, partial or unservable falls back to the
+native path automatically, and if OpenSearch is unavailable the whole storefront transparently
+reverts to EAV. A product missing from the index is **warmed on first access** — loaded natively
+once, pushed to the index, then served from OpenSearch thereafter.
 
 ---
 
@@ -473,6 +522,9 @@ curl -s "http://localhost:9200/magento2_products/_mapping?pretty"
 
 ## Known limitations / roadmap
 
+- The **category page's product grid** still renders natively (MySQL); the fully OS-served, live
+  product listing today is the **search results page**. OS-serving the category/PLP grid is the
+  next serving-layer milestone.
 - Grouped and bundle read paths are indexed but not yet fully exercised for add-to-cart.
 - The serving index projects the **default store view**; per-store serving is tracked
   separately for multi-store setups.
@@ -480,10 +532,11 @@ curl -s "http://localhost:9200/magento2_products/_mapping?pretty"
   (e.g. Compatible Platforms) are deferred — the native fulltext index sorts a doc's option-id
   and option-label arrays independently, so an id can't be mapped to its label from OpenSearch
   alone. A per-attribute option dictionary in the index would close this.
-- **Fast Checkout** is opt-in and should be validated with a real order (guest + a logged-in
-  group, plus a deliberately over-qty line) before enabling in production; it also assumes a
-  fresh price/rule projection (the always-ready rule sync keeps it current after the first
-  reindex).
+- **Fast Checkout** is **on by default** but changes checkout stock behaviour (optimistic stock
+  relies on the placement-time SKU gate), so validate it with a real order — guest + a logged-in
+  group, plus a deliberately over-qty line — after go-live; it also assumes a fresh price/rule
+  projection (the always-ready rule sync keeps it current after the first reindex). Turn the
+  master toggle off to fall back to a fully native cart.
 
 ---
 
