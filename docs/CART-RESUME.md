@@ -239,6 +239,26 @@ StockSyncer-live OS stock_item for cart UX; placement's CheckItemsQuantity stays
   (graceful rejection) rather than earlier. Default off; opt-in; validate in the supervised
   order test (esp. a deliberately over-qty simple line) before enabling.
 
+### The physical-cart query hog — traced (2026-07-21)
+A 2-item SIMPLE cart = ~95 full-request queries (vs 15 downloadable). Breakdown: it's NOT tax —
+it's **MSI multi-source stock resolution** (inventory_source_item 36, inventory_source_stock_
+link 24, cataloginventory_stock_status 18): this store has multiple inventory sources, so
+salable-qty resolution is heavy per line, re-run at load AND every collectTotals.
+- **Driver #1 (fixed, safe):** core `QuantityValidatorObserver` (sales_quote_item_qty_set_after)
+  → per-line MSI salable resolution. New `Plugin/Inventory/QuantityValidatorSkipPlugin` skips it
+  under the optimistic flag (both flags + servable area; adminhtml/cron keep it). Placement's
+  CheckItemsQuantity stays the gate. **Simple cart 95→68 (-28%)**, totals byte-for-byte
+  identical (guest/grp-1/simple-w-tax) — a low/OOS line just rides to placement now.
+- **Driver #2 (left alone, 3rd-party):** the remaining ~28 MSI queries come from a marketplace
+  observer — `Jadog\Marketplacechanges\Observer\QuantityValidatorObserver` (itself a fix for a
+  Webkul observer that `save()`d the stock item on EVERY validation) — which loads the stock
+  item per qty-set to enforce **max-sale-qty**, and `save()`s it when that changes (a write on
+  the read path → cascades into inventory_source syncs). It's legitimate marketplace business
+  logic, store-policy-specific → NOT skipped by us. FLAGGED as a 3rd-party checkout-perf cost
+  worth the store owner/Webkul-Jadog addressing (a stock write during a cart read is a smell).
+- checkData() in our OS path (mirrors core) is what fires the qty-set cascade; that's core
+  parity, not something to remove.
+
 Still owner-gated (step 5): real supervised order (guest + wholesale) — order-item conversion,
 stock decrement, no overselling — before enabling for real. GraphQL uses the same group-stamp
 mechanism but wasn't exercised here (Luma store → webapi_rest is the live path). Harnesses:

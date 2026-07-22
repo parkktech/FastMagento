@@ -37,4 +37,14 @@
     <preference for="Magento\Quote\Model\ResourceModel\Quote\Item\Collection"
                 type="ParkkTech\FastMagento\Model\ResourceModel\Quote\Item\Collection" />
 
+    <!-- Optimistic-stock: skip the per-qty-set MSI stock revalidation (QuantityValidator) on
+         the customer-facing quote path — the single biggest query source on a physical-product
+         cart. Placement's CheckItemsQuantity stays the authoritative gate. Both flags + servable
+         area gated in-plugin (adminhtml/cron keep full validation). Default off. -->
+    <type name="Magento\CatalogInventory\Observer\QuantityValidatorObserver">
+        <plugin name="fastmagento_optimistic_skip_qty_validator"
+                type="ParkkTech\FastMagento\Plugin\Inventory\QuantityValidatorSkipPlugin"
+                sortOrder="10"/>
+    </type>
+
 </config>
