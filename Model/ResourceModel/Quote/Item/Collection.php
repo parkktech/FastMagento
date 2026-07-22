@@ -141,8 +141,17 @@ class Collection extends \Magento\Quote\Model\ResourceModel\Quote\Item\Collectio
             //    the belt-and-suspenders guarantee if the row column is ever blank.
             //  - Custom options (option_ids): not hydrated into the shell yet (getOptions/
             //    getOptionById), so totals could drift — stay 100% native.
+            $canServeConfigurable = $this->isOptimisticStockEnabled();
             foreach ($this as $item) {
-                if (in_array((string) $item->getData('product_type'), ['configurable', 'bundle', 'grouped'], true)
+                $type = (string) $item->getData('product_type');
+                // Bundle/grouped: multi-child-per-line selection not OS-proven → native.
+                // Configurable: only OS-serve it when OPTIMISTIC mode is on — that is what
+                //   suspends the qty-set stock observers whose MSI child cascade otherwise
+                //   makes a served configurable FAR slower (measured 255 vs 79 queries).
+                //   Without optimistic, configurables stay native (safe parity).
+                // Custom options (option_ids): not hydrated into the shell yet → native.
+                if (in_array($type, ['bundle', 'grouped'], true)
+                    || ($type === 'configurable' && !$canServeConfigurable)
                     || $item->getOptionByCode('option_ids')
                 ) {
                     return parent::_assignProducts();
@@ -192,10 +201,35 @@ class Collection extends \Magento\Quote\Model\ResourceModel\Quote\Item\Collectio
             $this->_setIsLoaded(true);
         })->call($productCollection);
         foreach ($docs as $doc) {
-            $shell = $this->osShellBuilder->buildNoEavProductFromOsDoc($doc);
+            // Cart-mode build (hydrateChildren=false): a configurable parent is built WITHOUT its
+            // ~660 sibling variants — the purchased variant is its own quote item, wired below.
+            $shell = $this->osShellBuilder->buildNoEavProductFromOsDoc($doc, false);
             $shell->setStoreId($storeId);
             // addItem() keys by getId() (entity_id) and runs no SQL; we never call load().
             $productCollection->addItem($shell);
+        }
+
+        // Wire each configurable PARENT to ONLY the child variant(s) actually in the cart (child
+        // quote items carry parent_item_id). The purchased child is already a shell in the
+        // collection; registering it under child_products_<parentId> makes the Configurable
+        // override's getUsedProducts()/getProductByAttributes() resolve instantly to the in-cart
+        // variant — no native used-product DB load, no child fan-out. This is what lets a
+        // configurable line cost ~the same as a plain simple line (only reached in optimistic
+        // mode, where the qty-set stock cascade is already suspended).
+        foreach ($this as $item) {
+            try {
+                $parentItem = $item->getParentItem();
+            } catch (NoSuchEntityException $e) {
+                $parentItem = null;
+            }
+            if (!$parentItem) {
+                continue;
+            }
+            $parentPid = (int) $parentItem->getProductId();
+            $childShell = $productCollection->getItemById((int) $item->getProductId());
+            if ($parentPid && $childShell) {
+                $this->osShellBuilder->registerCartChildren($parentPid, [$childShell]);
+            }
         }
 
         $this->_eventManager->dispatch(
@@ -284,14 +318,14 @@ class Collection extends \Magento\Quote\Model\ResourceModel\Quote\Item\Collectio
         if ($doc['type_id'] === 'downloadable' && empty($doc['downloadable_links'])) {
             return false;
         }
-        // Composite products (configurable/grouped/bundle) → native. MEASURED: OS-serving a
-        // configurable is a ~2x LATENCY REGRESSION (the parent's ~660 child shells must be
-        // built — the cart path calls getUsedProducts() on the parent, so they can't be
-        // skipped without an uncached N+1 native reload). Native resolves the same children
-        // in ONE batched 660-SKU query, which beats 660 PHP object builds every time. Query
-        // count drops but wall-clock doubles; wall-clock is what checkout latency is. Simple/
-        // virtual/downloadable carts stay OS-served (neutral-to-faster, no child fan-out).
-        if (in_array($doc['type_id'], ['configurable', 'bundle', 'grouped'], true)) {
+        // Bundle/grouped → native (multi-child-per-line selection not OS-proven yet).
+        if (in_array($doc['type_id'], ['bundle', 'grouped'], true)) {
+            return false;
+        }
+        // Configurable → served ONLY in optimistic mode, which suspends the qty-set stock
+        // observers whose MSI child cascade would otherwise dominate (255 vs 79 queries). Built
+        // child-less + wired to the in-cart variant in assignProductsFromOs. Else native.
+        if ($doc['type_id'] === 'configurable' && !$this->isOptimisticStockEnabled()) {
             return false;
         }
         return true;

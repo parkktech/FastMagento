@@ -145,6 +145,28 @@ class ShellProductBuilder
     }
 
     /**
+     * Register the in-cart child shell(s) under a configurable/composite parent so the
+     * Configurable override's getUsedProducts()/getProductByAttributes() resolve to exactly the
+     * variant(s) being purchased — no native used-product DB load, no ~660-child build. Used by
+     * the cart/checkout serve path (buildNoEavProductFromOsDoc(..., hydrateChildren=false)).
+     *
+     * @param int $parentId
+     * @param ShellNoEavProduct[] $childShells
+     */
+    public function registerCartChildren(int $parentId, array $childShells): void
+    {
+        $childShells = array_values(array_filter($childShells));
+        if ($parentId <= 0 || !$childShells) {
+            return;
+        }
+        $perIdKey = 'child_products_' . $parentId;
+        $this->registry->unregister($perIdKey);
+        $this->registry->register($perIdKey, $childShells);
+        $this->registry->unregister('child_products');
+        $this->registry->register('child_products', $childShells);
+    }
+
+    /**
      * (2) Build a pure "ShellDataProduct" (implements ProductInterface, no EAV).
      * BUT code strictly requiring \Magento\Catalog\Model\Product will fail.
      */
@@ -175,7 +197,7 @@ class ShellProductBuilder
      * no DB loads if you don't call ->load(). This satisfies strict type checks
      * (like Swissup) while skipping EAV overhead.
      */
-    public function buildNoEavProductFromOsDoc(array $doc): ShellNoEavProduct
+    public function buildNoEavProductFromOsDoc(array $doc, bool $hydrateChildren = true): ShellNoEavProduct
     {
         /** @var ShellNoEavProduct $noEavProduct */
         $product = $this->shellNoEavProductFactory->create();
@@ -354,29 +376,43 @@ class ShellProductBuilder
         if (!empty($doc['child_products']) && is_array($doc['child_products'])) {
             $product->setData('child_products', $doc['child_products']);
 
-            $childProducts = [];
             $anyChildInStock = false;
             foreach ($doc['child_products'] as $child) {
                 if (!empty($child['is_in_stock'])) {
                     $anyChildInStock = true;
+                    if (!$hydrateChildren) {
+                        break; // cart-mode: we only scan for salability; stop early.
+                    }
                 }
-                //Make recursive calls to this method to add all child products.
-                $childProducts[] = $this->buildNoEavProductFromOsDoc($child);
             }
 
-            // Register children BOTH globally (legacy "last built" convention) AND keyed by
-            // this parent's id. The global key is overwritten whenever any other configurable
-            // is hydrated in the same request — so a cart with two configurables, or an
-            // add-to-cart while another configurable sits in the quote, resolved options
-            // against the WRONG parent's children and silently failed. The per-id key lets
-            // getUsedProducts()/getProductByAttributes() fetch the right children regardless.
-            $parentId = (int) ($doc['entity_id'] ?? 0);
-            $this->registry->unregister('child_products');
-            $this->registry->register('child_products', $childProducts);
-            if ($parentId) {
-                $perIdKey = 'child_products_' . $parentId;
-                $this->registry->unregister($perIdKey);
-                $this->registry->register($perIdKey, $childProducts);
+            // CART/CHECKOUT MODE ($hydrateChildren=false): the selected variant is its OWN quote
+            // item (served separately as a normal simple), so the parent needs NONE of its ~660
+            // sibling variants built. That recursive build is the biggest quote-load cost. Skip
+            // it; the caller (Quote\Item\Collection) registers just the in-cart child under
+            // child_products_<parentId> via registerCartChildren() so getUsedProducts() resolves
+            // cheaply. Parent salability comes from the raw-array scan above.
+            if ($hydrateChildren) {
+                $childProducts = [];
+                foreach ($doc['child_products'] as $child) {
+                    //Make recursive calls to this method to add all child products.
+                    $childProducts[] = $this->buildNoEavProductFromOsDoc($child);
+                }
+
+                // Register children BOTH globally (legacy "last built" convention) AND keyed by
+                // this parent's id. The global key is overwritten whenever any other configurable
+                // is hydrated in the same request — so a cart with two configurables, or an
+                // add-to-cart while another configurable sits in the quote, resolved options
+                // against the WRONG parent's children and silently failed. The per-id key lets
+                // getUsedProducts()/getProductByAttributes() fetch the right children regardless.
+                $parentId = (int) ($doc['entity_id'] ?? 0);
+                $this->registry->unregister('child_products');
+                $this->registry->register('child_products', $childProducts);
+                if ($parentId) {
+                    $perIdKey = 'child_products_' . $parentId;
+                    $this->registry->unregister($perIdKey);
+                    $this->registry->register($perIdKey, $childProducts);
+                }
             }
 
             // A composite parent (configurable/grouped/bundle) holds no stock of its own —
