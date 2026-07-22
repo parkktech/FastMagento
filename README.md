@@ -390,39 +390,92 @@ immediately after install.
 
 ## Architecture
 
-### Serving layer
+### How it works end-to-end
 
-A frontend load of a product/category is intercepted and hydrated from OpenSearch into a
-lightweight *shell* object that subclasses the real Magento model but never issues an EAV
-load. Because it is a genuine `Product`/`Category`, third-party blocks and plugins keep
-working unchanged. When the requested document is not in the index (mid-reindex, never
-indexed), the read path loads it natively once, projects it into OpenSearch, and serves the
-next request from the index.
+MySQL stays the source of truth. Two background paths keep an OpenSearch document current for
+every product and category; the storefront read path then answers from those documents instead of
+EAV, with an automatic native fallback.
 
-### Indexers
+```mermaid
+flowchart LR
+    subgraph WRITE["Write path — keeps the index live"]
+        direction TB
+        C["Catalog / price / stock /<br/>category change"] --> IDX["Indexers via mview:<br/>fastmagento_product<br/>fastmagento_category"]
+        ORD["Order · refund ·<br/>MSI stock write"] --> SS["StockSyncer<br/>after fastcgi_finish_request"]
+        RULE["Catalog-rule reindex"] --> CRS["CatalogRuleSyncer"]
+    end
 
-| Indexer id | Index | Serves |
+    IDX --> OS[("OpenSearch<br/>magento2_products<br/>magento2_categories")]
+    SS --> OS
+    CRS --> OS
+
+    subgraph READ["Read path — serves the storefront"]
+        direction TB
+        REQ["Storefront request<br/>PDP · cart · search · menu"] --> INT{"Interception<br/>layer"}
+        SHELL["ShellNoEavProduct<br/>real Product · no EAV load"] --> RESP["Rendered page / JSON"]
+        EAV[("MySQL EAV<br/>native fallback")] -.->|"warm-on-miss"| OS
+        EAV --> RESP
+    end
+
+    INT -->|"hit"| OS
+    OS -->|"_source doc"| SHELL
+    INT -.->|"miss / OS down"| EAV
+```
+
+**Write path.** Catalog/price/stock/category edits reproject through the `fastmagento_product` /
+`fastmagento_category` **mview** indexers. Stock changes from orders, refunds and MSI inventory
+writes are reprojected by **StockSyncer** *after* the response is flushed. Catalog-rule
+recalculations patch per-group rule prices into the docs via **CatalogRuleSyncer** — no manual
+reindex needed.
+
+**Read path.** Every storefront read is intercepted and answered from an OpenSearch document by a
+`ShellNoEavProduct` (a real `Magento\Catalog\Model\Product` subclass whose `load()` is a no-op and
+whose getters read the indexed `_source`). Because it is a genuine `Product`/`Category`, third-party
+blocks, plugins and SEO modules keep working unchanged. A missing/partial doc, or an OpenSearch
+outage, transparently falls back to native EAV — and a product missing from the index is **warmed
+on first access** (loaded natively once, projected, then served from OpenSearch thereafter).
+
+### Two serving indexes
+
+| Indexer id | Index | Each document carries |
 |---|---|---|
-| `fastmagento_product` | `magento2_products` | product docs (PDP / PLP / search / cart) |
-| `fastmagento_category` | `magento2_categories` | category tree, menu flags, url paths |
+| `fastmagento_product` | `magento2_products` | name, sku, type, visibility, status; regular / special / tier price + a **per-customer-group catalog-rule price map**; `is_in_stock` + qty + full `stock_item`; media gallery; `category_ids` / `category_names`; canonical `request_path` + `url_key`/`url_path`; **every custom attribute with option ids pre-resolved to labels**; configurable `swatch_options` + `configurable_options_<id>`; batched composite `child_products` (each with its own price/stock/rule map); downloadable links/samples; `parent_ids` |
+| `fastmagento_category` | `magento2_categories` | tree structure (`parent_id`, `path`, `level`, `position`, `children_count`); menu flags (`include_in_menu`, `is_active`, `is_anchor`, `display_mode`); `url_key` / `url_path` / `request_path` |
 
-Both track incremental changes through `mview` (subscriptions on the respective EAV tables)
-and stream documents to OpenSearch in bulk chunks for flat memory use at catalog scale.
+Both track incremental changes through **mview** and stream documents to OpenSearch in **NDJSON
+bulk chunks of 200** for flat memory use at catalog scale.
 
-### Real-time stock sync
+### Read path — the interception points
 
-MSI mutates stock through SKU-keyed tables that a product-entity mview cannot map, so stock
-is additionally kept live by:
+The read path is intercepted at these choke points, so nothing on the storefront issues the native
+EAV load:
+
+- `Magento\Catalog\Model\Product::load` — the single product-load interception (PDP, cart).
+- `ProductRepositoryInterface::getById` — repository / REST / GraphQL reads.
+- `Product\CollectionFactory` and the link (related / up-sell / cross-sell) collection.
+- `Category\Collection::_loadAttributes` and `UrlFinderInterface` — category data + URLs.
+- `TierPrice` / `CatalogRulePrice` / `SpecialPrice` price models, `LowestPriceOptionsProvider`,
+  the configurable type model, and `StockRegistryInterface`.
+- `Quote\Item\Collection::_assignProducts` — the Fast Checkout quote-item serving (global, so it
+  covers `webapi_rest` / `graphql` checkout; admin and cron always stay native).
+
+### Real-time stock sync (detail)
+
+MSI mutates stock through SKU-keyed tables (`inventory_source_item` / reservations) that a
+product-entity mview cannot map, so stock is additionally kept live by:
 
 - `sales_order_place_after` observer — reservation / decrement on order.
 - `sales_order_creditmemo_save_after` observer — back-to-stock on return/refund.
+- `catalog_product_delete_after` observer — drops the deleted product's document.
 - `SourceItemsSaveInterface` / `SourceItemsDeleteInterface` plugins — admin grid, imports,
   ERP integrations and `bin/magento inventory:*`.
 
-Each reprojects only the affected products (and their composite parents) and is best-effort
-(logged, never surfaced) so a sync failure cannot break checkout, a refund or a stock save.
-The stock *write* remains native Magento (`StockManagement`); the sync only keeps the index
-current.
+Each reprojects only the affected products (and their configurable/grouped/bundle parents), skips
+no-op saves (compares live stock against the indexed values), and runs after
+`fastcgi_finish_request` — best-effort and logged, so a sync failure can never break checkout, a
+refund or a stock save. The stock *write* remains native Magento (`StockManagement`); the sync only
+keeps the index current, and order placement re-checks salable quantity by SKU, so it can never
+oversell.
 
 ---
 
