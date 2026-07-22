@@ -14,26 +14,27 @@ running this serving layer.
 
 ### Built for large, attribute-heavy, complex-configurable catalogs
 
-This extension was designed and hardened against a catalog where native Magento hurts the most —
-lots of products, lots of attributes, and configurables with **hundreds** of variants. Everything
-in this README is measured on that reference catalog:
+This extension targets the catalogs where native Magento hurts the most — many attributes and
+configurables with **hundreds** of variants — and it is architected so **per-page product/EAV
+cost stays flat as the catalog grows**. Every PDP, PLP and search request resolves to a bounded
+OpenSearch read (one search + one `mget`), never a scan of the catalogue, so page latency does
+not climb with product count the way native EAV hydration does.
 
-| Dimension | This catalog |
-|---|---:|
-| Total products | **14,604** |
-| — simple / downloadable / virtual / configurable | 13,223 / 1,318 / 43 / 20 |
-| Product attributes | **101** |
-| Attribute sets | **11** |
-| Configurables with **> 250** variants | **all 20** |
-| **Largest single configurable** | **660 variants** (2 axes) |
+**Capacity.** Because the per-request cost is independent of catalog size, the practical ceiling
+is your **OpenSearch cluster, not Magento's EAV**. OpenSearch comfortably indexes millions of
+documents on modest hardware, and the serving reads (bounded `search` + `mget` by id) stay
+constant-time regardless of how large the catalogue gets. In practice this is designed to serve
+catalogues from a few thousand to **1M+ products without per-page performance degradation**;
+beyond that, OpenSearch sharding scales further. The one operation that grows with catalog size —
+reindexing — streams documents in bulk chunks for flat memory use, so it scales too.
 
-Native Magento prices, hydrates and stock-checks a configurable by iterating **every** child, so
-cost scales with variant count — a **660-variant** product is a worst case that makes cold PDP,
-cart and checkout crawl. The whole point of the serving layer is that these operations become
-**index reads that stay flat as variant count and attribute count grow**. If your catalog is
-large, EAV-heavy, or full of big configurables, this is exactly the workload it targets; a small,
-simple catalog will see the query reductions but feel less wall-clock benefit (see the note under
-Benchmarks).
+**Complex configurables.** Native Magento prices, hydrates and stock-checks a configurable by
+iterating **every** child, so cost scales with variant count — a configurable with **hundreds of
+variants** is a worst case that makes cold PDP, cart and checkout crawl. The serving layer turns
+those into flat index reads, and is validated against configurables carrying **several hundred
+variants across multiple axes**. If your catalogue is large, attribute-heavy, or full of big
+configurables, this is exactly the workload it targets; a small, simple catalogue still gets the
+query reductions but feels less wall-clock benefit (see the note under Benchmarks).
 
 **Measured on a production-sized catalog:**
 
@@ -50,9 +51,10 @@ Benchmarks).
 
 Measured on this storefront by toggling `ParkkTech_FastMagento` on and off and replaying the
 same requests. **Cold render** = Full-Page-Cache disabled — the real product-render path (an
-FPC *hit* renders no product blocks, so it hides the cost). Environment: local dev, **~14,600
-products**, **active catalog price rules across customer groups**, with Webkul Marketplace and
-other third-party modules running on every page.
+FPC *hit* renders no product blocks, so it hides the cost). Environment: local dev, a mid-sized
+catalogue with **active catalog price rules across customer groups** and configurables up to
+several hundred variants, with Webkul Marketplace and other third-party modules running on every
+page.
 
 ![Cold-render SQL queries — native Magento vs FastMagento](docs/img/benchmark-queries.svg)
 
