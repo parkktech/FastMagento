@@ -161,70 +161,62 @@ class InstantSearch
         $expanded = $this->expandQuery($query);
         $operator = $this->operatorParams();   // any/all/most → per-clause term-coverage rule
 
-        // Primary as-you-type clause (bool_prefix) on the stop-word-stripped query; field
-        // boosts come from the admin searchable-attributes weights. The operator params make
-        // the last-typed term a prefix while still enforcing AND / 75% coverage on the rest.
-        $primary = ['query' => $expanded['clean'], 'type' => 'bool_prefix', 'fields' => $fields] + $operator;
-        if ($this->relevanceConfig->isTypoToleranceEnabled()) {
-            $primary['fuzziness'] = 'AUTO';
-        }
-        $should = [['multi_match' => $primary]];
-
-        // Exact / phrase boost: a product whose name/keywords contain the query as a contiguous
-        // phrase outranks docs where the same words are merely scattered (this is what stops a
-        // "seat" that mentions UTV once from outranking an actual UTV part). Uses the RAW query,
-        // not the stop-word-stripped one, so multi-word buyer phrases survive ("side by side"
-        // must stay intact — stripping "by" would collapse it to "side side"). Additive scoring:
-        // it never widens the result set beyond what the primary/synonym clauses already match.
         $phraseBoost = $this->relevanceConfig->getPhraseMatchBoost();
-        if ($phraseBoost > 0) {
-            $should[] = ['multi_match' => [
-                'query' => mb_strtolower($query),
-                'type' => 'phrase',
-                'fields' => $fields,
-                'slop' => 2,                 // tolerate a word or two between ("side by side")
-                'boost' => $phraseBoost,
-                'tie_breaker' => 0.3,
-            ]];
-        }
+        $typo = $this->relevanceConfig->isTypoToleranceEnabled();
 
-        // All-terms precision boost: a product matching EVERY query term (cross_fields, so the
-        // terms may be spread across name + keywords + description) is ranked well above a
-        // single-term hit — the ranking half of the operator story, applied regardless of the
-        // configured operator so precision improves without ever costing recall. Only meaningful
-        // for multi-term queries.
-        if (count(preg_split('/\s+/', trim($expanded['clean'])) ?: []) > 1) {
-            $should[] = ['multi_match' => [
-                'query' => $expanded['clean'],
-                'type' => 'cross_fields',
-                'operator' => 'and',
-                'fields' => $fields,
-                'boost' => max(2.0, $phraseBoost * 0.75),
-            ]];
-        }
+        // Candidate set = the cleaned query PLUS every synonym variant, treated as EQUIVALENT and
+        // scored identically. Because synonyms are symmetric ("frontend" ⇄ "front end" produce
+        // the same {frontend, front end} set), two queries that mean the same thing yield the same
+        // results in the same order — no synonym demotion. Each candidate gets the full scoring
+        // treatment below (as-you-type prefix + full-field match + phrase + all-terms).
+        $candidates = array_values(array_unique(array_filter(
+            array_merge([$expanded['clean']], $expanded['variants']),
+            static fn ($c) => $c !== ''
+        )));
 
-        // Thesaurus: each synonym variant is a lower-boosted alternative, so a product that
-        // only matches the synonym (e.g. "brassiere" for "bra", or "front end" for "frontend")
-        // is still found. Same operator rule as the primary so "all/most" precision isn't
-        // bypassed via a synonym swap.
-        foreach ($expanded['variants'] as $variant) {
+        $should = [];
+        foreach ($candidates as $candidate) {
+            $multiWord = strpos($candidate, ' ') !== false;
+
+            // As-you-type prefix match (last term is a prefix); field boosts from admin weights.
+            $prefix = ['query' => $candidate, 'type' => 'bool_prefix', 'fields' => $fields] + $operator;
+            if ($typo) {
+                $prefix['fuzziness'] = 'AUTO';
+            }
+            $should[] = ['multi_match' => $prefix];
+
+            // Full-word best-field match (the equivalence match — full strength, no demotion).
             $should[] = ['multi_match' =>
-                ['query' => $variant, 'type' => 'best_fields', 'fields' => $fields, 'boost' => 0.6, 'tie_breaker' => 0.3]
+                ['query' => $candidate, 'type' => 'best_fields', 'fields' => $fields, 'tie_breaker' => 0.3]
                 + $operator
             ];
-            // For a multi-word variant, also reward a contiguous-phrase match so a genuine
-            // "front end" product outranks one that merely contains "front" — otherwise the
-            // synonym expansion surfaces the right products but ranks them by a single token.
-            if ($phraseBoost > 0 && strpos($variant, ' ') !== false) {
+
+            if ($multiWord) {
+                // Exact/phrase boost: a contiguous-phrase hit outranks scattered-token hits.
+                if ($phraseBoost > 0) {
+                    $should[] = ['multi_match' => [
+                        'query' => $candidate, 'type' => 'phrase', 'fields' => $fields,
+                        'slop' => 2, 'boost' => $phraseBoost, 'tie_breaker' => 0.3,
+                    ]];
+                }
+                // All-terms precision boost: a product matching EVERY term (cross_fields, terms may
+                // be spread across name + keywords + description) ranks well above a single-term hit.
                 $should[] = ['multi_match' => [
-                    'query' => $variant,
-                    'type' => 'phrase',
-                    'fields' => $fields,
-                    'slop' => 2,
-                    'boost' => $phraseBoost * 0.75,
-                    'tie_breaker' => 0.3,
+                    'query' => $candidate, 'type' => 'cross_fields', 'operator' => 'and',
+                    'fields' => $fields, 'boost' => max(2.0, $phraseBoost * 0.75),
                 ]];
             }
+        }
+
+        // Preserve the RAW multi-word phrase (before stop-word stripping) so a buyer phrase whose
+        // middle word is a stop word survives — "side by side" must stay intact rather than
+        // collapse to the cleaned "side side".
+        $rawLower = trim((string) preg_replace('/\s+/', ' ', mb_strtolower($query)));
+        if ($phraseBoost > 0 && strpos($rawLower, ' ') !== false && $rawLower !== $expanded['clean']) {
+            $should[] = ['multi_match' => [
+                'query' => $rawLower, 'type' => 'phrase', 'fields' => $fields,
+                'slop' => 2, 'boost' => $phraseBoost, 'tie_breaker' => 0.3,
+            ]];
         }
 
         $filterClauses = [];
