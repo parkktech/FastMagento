@@ -1,0 +1,38 @@
+[
+  {
+    "query": "UTV",
+    "note": "Vehicle-type term: UTV parts/products should rank above unrelated items that merely mention UTV.",
+    "expect_top_any": ["utv", "side by side", "sxs", "side-by-side"],
+    "avoid_top3": []
+  },
+  {
+    "query": "side by side",
+    "note": "Synonym of UTV — should surface UTV products via thesaurus / keyword layer.",
+    "expect_top_any": ["utv", "side by side", "sxs", "rzr", "ranger", "maverick"],
+    "avoid_top3": []
+  },
+  {
+    "query": "front end",
+    "note": "Two-word buyer phrasing for frontend suspension/steering parts.",
+    "expect_top_any": ["front", "frontend", "a-arm", "control arm", "steering"],
+    "avoid_top3": []
+  },
+  {
+    "query": "Frontend UTV",
+    "note": "Multi-term precision: with operator=all/most, results should relate to BOTH frontend AND UTV, not frontend-only.",
+    "expect_top_any": ["front", "utv"],
+    "avoid_top3": []
+  },
+  {
+    "query": "light bar",
+    "note": "Common accessory phrasing (LED light bar).",
+    "expect_top_any": ["light", "led", "bar"],
+    "avoid_top3": []
+  },
+  {
+    "query": "skid plate",
+    "note": "Protection part; buyers also say belly pan.",
+    "expect_top_any": ["skid", "plate", "belly", "armor"],
+    "avoid_top3": []
+  }
+]

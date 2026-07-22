@@ -15,6 +15,15 @@
         </arguments>
     </type>
 
+    <!-- CLI: AI search-keyword layer generation (fastmagento:search-keywords:generate). -->
+    <type name="Magento\Framework\Console\CommandListInterface">
+        <arguments>
+            <argument name="commands" xsi:type="array">
+                <item name="fastmagento_generate_search_keywords" xsi:type="object">ParkkTech\FastMagento\Console\Command\GenerateSearchKeywords</item>
+            </argument>
+        </arguments>
+    </type>
+
     <!-- Real-time OpenSearch stock sync when MSI stock is written via the inventory API
          (admin grid, imports, ERP/integration, bin/magento inventory:*). -->
     <type name="Magento\InventoryApi\Api\SourceItemsSaveInterface">

@@ -23,6 +23,9 @@ class RelevanceConfig
         'description' => 1,
     ];
 
+    /** The AI keyword layer field (see Setup\Patch\Data\AddSearchKeywordsAttribute). */
+    public const KEYWORD_FIELD = 'fm_search_keywords';
+
     public function __construct(
         private readonly ScopeConfigInterface $scopeConfig,
         private readonly Json $json
@@ -57,17 +60,57 @@ class RelevanceConfig
     }
 
     /**
-     * Weighted field list for a multi_match query, e.g. ['name^5','sku^6'].
+     * Weighted field list for a multi_match query, e.g. ['name^5','sku^6']. When the AI keyword
+     * layer is enabled, `fm_search_keywords` is folded in at its configured weight (unless the
+     * merchant already listed it explicitly), so keyword hits rank strongly without hand config.
      *
      * @return string[]
      */
     public function getBoostedFields(): array
     {
+        $weights = $this->getSearchableAttributes();
+        if ($this->isSearchKeywordsEnabled() && !isset($weights[self::KEYWORD_FIELD])) {
+            $weights[self::KEYWORD_FIELD] = $this->getSearchKeywordsWeight();
+        }
+
         $fields = [];
-        foreach ($this->getSearchableAttributes() as $code => $weight) {
+        foreach ($weights as $code => $weight) {
             $fields[] = $weight > 1 ? $code . '^' . rtrim(rtrim((string) $weight, '0'), '.') : $code;
         }
         return $fields;
+    }
+
+    /**
+     * How multiple query terms combine: 'any' (OR, default), 'all' (AND), or 'most' (75%).
+     */
+    public function getSearchOperator(): string
+    {
+        $value = (string) $this->value('search_operator');
+        return in_array($value, ['any', 'all', 'most'], true) ? $value : 'any';
+    }
+
+    /**
+     * Boost applied to a contiguous-phrase match over scattered token hits. 0 disables.
+     */
+    public function getPhraseMatchBoost(): float
+    {
+        $raw = $this->value('phrase_match_boost');
+        if ($raw === null || trim($raw) === '') {
+            return 4.0;
+        }
+        return max(0.0, (float) $raw);
+    }
+
+    public function isSearchKeywordsEnabled(): bool
+    {
+        return $this->scopeConfig->isSetFlag('fastmagento/search/search_keywords_enabled', ScopeInterface::SCOPE_STORE);
+    }
+
+    public function getSearchKeywordsWeight(): float
+    {
+        $raw = $this->value('search_keywords_weight');
+        $weight = $raw === null ? 0.0 : (float) $raw;
+        return $weight > 0 ? $weight : 8.0;
     }
 
     public function isTypoToleranceEnabled(): bool

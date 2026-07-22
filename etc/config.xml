@@ -18,8 +18,37 @@
                 <typo_tolerance>1</typo_tolerance>
                 <boost_in_stock>1</boost_in_stock>
                 <custom_ranking_direction>desc</custom_ranking_direction>
+                <!-- How multiple query terms combine: any (OR, minimum_should_match:1 — today's
+                     behaviour), all (AND — every term must match), most (minimum_should_match:75%).
+                     Default any to preserve behaviour; switch to all/most to tighten precision. -->
+                <search_operator>any</search_operator>
+                <!-- Exact/phrase match boost: a product whose name/keywords contain the query as a
+                     contiguous phrase outranks scattered-token hits. 0 disables. -->
+                <phrase_match_boost>4</phrase_match_boost>
+                <!-- AI keyword layer (fm_search_keywords). Populated OFF the request path by
+                     bin/magento fastmagento:search-keywords:generate. Default OFF: no commit
+                     changes live search until a store enables it AND runs the generator. -->
+                <search_keywords_enabled>0</search_keywords_enabled>
+                <search_keywords_weight>8</search_keywords_weight>
+                <!-- Attribute codes whose labels give the AI product context when generating
+                     keywords. Blank falls back to the facet attributes above. -->
+                <keyword_source_attributes/>
                 <stopwords>a, an, and, or, the, of, for, with, to, in, on, at, by, is, it, this, that, your, my</stopwords>
-                <synonyms>bra, brassiere, bralette
+                <synonyms>frontend, front end
+side by side, side-by-side, sxs, utv
+atv, quad, four wheeler, 4 wheeler, four-wheeler
+a-arm, a arm, control arm, control-arm
+sway bar, anti-roll bar, stabilizer bar, swaybar
+light bar, led bar, light-bar
+skid plate, belly pan, skid-plate, skidplate
+tie rod, tierod, tie-rod
+rod end, heim, heim joint, heim-joint
+radius rod, radius arm, trailing arm
+can-am, canam, can am
+rzr, razor
+prerunner, pre-runner, pre runner
+bumper, bull bar, brush guard
+bra, brassiere, bralette
 helmet, lid, moto helmet
 tire, tyre, tires, tyres
 aluminum, aluminium, alu

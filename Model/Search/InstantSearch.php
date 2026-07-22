@@ -109,6 +109,49 @@ class InstantSearch
     }
 
     /**
+     * Relevance-debug view: run the real search query and return the ranked hits WITH their
+     * `_score`, straight from the native fulltext index (no hydration). Intended for the offline
+     * relevance harness (docs/tools/search-relevance.php) so ranking changes are measured against
+     * golden queries, not guessed. Read-only; degrades to an empty list, never throws.
+     *
+     * @param array<string, string[]> $filters
+     * @return array{query:string,total:int,operator:string,hits:array<int,array{id:int,score:float,name:string,sku:string}>}
+     */
+    public function debugSearch(string $query, int $size = 10, array $filters = []): array
+    {
+        $query = trim($query);
+        $out = ['query' => $query, 'total' => 0, 'operator' => $this->relevanceConfig->getSearchOperator(), 'hits' => []];
+        if ($query === '') {
+            return $out;
+        }
+        try {
+            $storeId = (int) $this->storeManager->getStore()->getId();
+            $response = $this->getClient()->getOpenSearchClient()->search([
+                'index' => $this->getSearchIndex($storeId),
+                'body' => [
+                    'from' => 0,
+                    'size' => max(1, min(50, $size)),
+                    'query' => $this->buildQuery($query, $filters),
+                    '_source' => ['name', 'sku'],
+                    'track_total_hits' => true,
+                ],
+            ]);
+            $out['total'] = (int) ($response['hits']['total']['value'] ?? 0);
+            foreach ($response['hits']['hits'] ?? [] as $hit) {
+                $out['hits'][] = [
+                    'id' => (int) $hit['_id'],
+                    'score' => (float) ($hit['_score'] ?? 0),
+                    'name' => (string) ($hit['_source']['name'] ?? ''),
+                    'sku' => (string) ($hit['_source']['sku'] ?? ''),
+                ];
+            }
+        } catch (\Throwable $e) {
+            $this->writeLog->writeErrorLog('[FastMagento] debugSearch failed: ' . $e->getMessage());
+        }
+        return $out;
+    }
+
+    /**
      * @param array<string, string[]> $filters
      * @return array<string, mixed>
      */
@@ -116,19 +159,72 @@ class InstantSearch
     {
         $fields = $this->relevanceConfig->getBoostedFields();
         $expanded = $this->expandQuery($query);
+        $operator = $this->operatorParams();   // any/all/most → per-clause term-coverage rule
 
         // Primary as-you-type clause (bool_prefix) on the stop-word-stripped query; field
-        // boosts come from the admin searchable-attributes weights.
-        $primary = ['query' => $expanded['clean'], 'type' => 'bool_prefix', 'fields' => $fields];
+        // boosts come from the admin searchable-attributes weights. The operator params make
+        // the last-typed term a prefix while still enforcing AND / 75% coverage on the rest.
+        $primary = ['query' => $expanded['clean'], 'type' => 'bool_prefix', 'fields' => $fields] + $operator;
         if ($this->relevanceConfig->isTypoToleranceEnabled()) {
             $primary['fuzziness'] = 'AUTO';
         }
         $should = [['multi_match' => $primary]];
 
+        // Exact / phrase boost: a product whose name/keywords contain the query as a contiguous
+        // phrase outranks docs where the same words are merely scattered (this is what stops a
+        // "seat" that mentions UTV once from outranking an actual UTV part). Uses the RAW query,
+        // not the stop-word-stripped one, so multi-word buyer phrases survive ("side by side"
+        // must stay intact — stripping "by" would collapse it to "side side"). Additive scoring:
+        // it never widens the result set beyond what the primary/synonym clauses already match.
+        $phraseBoost = $this->relevanceConfig->getPhraseMatchBoost();
+        if ($phraseBoost > 0) {
+            $should[] = ['multi_match' => [
+                'query' => mb_strtolower($query),
+                'type' => 'phrase',
+                'fields' => $fields,
+                'slop' => 2,                 // tolerate a word or two between ("side by side")
+                'boost' => $phraseBoost,
+                'tie_breaker' => 0.3,
+            ]];
+        }
+
+        // All-terms precision boost: a product matching EVERY query term (cross_fields, so the
+        // terms may be spread across name + keywords + description) is ranked well above a
+        // single-term hit — the ranking half of the operator story, applied regardless of the
+        // configured operator so precision improves without ever costing recall. Only meaningful
+        // for multi-term queries.
+        if (count(preg_split('/\s+/', trim($expanded['clean'])) ?: []) > 1) {
+            $should[] = ['multi_match' => [
+                'query' => $expanded['clean'],
+                'type' => 'cross_fields',
+                'operator' => 'and',
+                'fields' => $fields,
+                'boost' => max(2.0, $phraseBoost * 0.75),
+            ]];
+        }
+
         // Thesaurus: each synonym variant is a lower-boosted alternative, so a product that
-        // only matches the synonym (e.g. "brassiere" for "bra") is still found.
+        // only matches the synonym (e.g. "brassiere" for "bra", or "front end" for "frontend")
+        // is still found. Same operator rule as the primary so "all/most" precision isn't
+        // bypassed via a synonym swap.
         foreach ($expanded['variants'] as $variant) {
-            $should[] = ['multi_match' => ['query' => $variant, 'type' => 'best_fields', 'fields' => $fields, 'boost' => 0.6]];
+            $should[] = ['multi_match' =>
+                ['query' => $variant, 'type' => 'best_fields', 'fields' => $fields, 'boost' => 0.6, 'tie_breaker' => 0.3]
+                + $operator
+            ];
+            // For a multi-word variant, also reward a contiguous-phrase match so a genuine
+            // "front end" product outranks one that merely contains "front" — otherwise the
+            // synonym expansion surfaces the right products but ranks them by a single token.
+            if ($phraseBoost > 0 && strpos($variant, ' ') !== false) {
+                $should[] = ['multi_match' => [
+                    'query' => $variant,
+                    'type' => 'phrase',
+                    'fields' => $fields,
+                    'slop' => 2,
+                    'boost' => $phraseBoost * 0.75,
+                    'tie_breaker' => 0.3,
+                ]];
+            }
         }
 
         $filterClauses = [];
@@ -164,6 +260,26 @@ class InstantSearch
     }
 
     /**
+     * multi_match term-coverage params for the configured operator, applied per scoring clause:
+     *  - any  → OR (a single term is enough; today's behaviour)
+     *  - most → OR + minimum_should_match 75% (majority of terms must match)
+     *  - all  → AND (every term must match)
+     *
+     * @return array<string, string>
+     */
+    private function operatorParams(): array
+    {
+        switch ($this->relevanceConfig->getSearchOperator()) {
+            case 'all':
+                return ['operator' => 'and'];
+            case 'most':
+                return ['operator' => 'or', 'minimum_should_match' => '75%'];
+            default:
+                return ['operator' => 'or'];
+        }
+    }
+
+    /**
      * Custom-ranking tie-breaker: text relevance first, then the configured numeric
      * attribute (Algolia's custom ranking after textual relevance).
      *
@@ -182,36 +298,52 @@ class InstantSearch
     }
 
     /**
-     * Strip stop words and build synonym variants (one substitution at a time, capped).
+     * Strip stop words and build synonym variants via PHRASE-level substitution (capped).
+     *
+     * Substitution works on the whole raw query at the word-boundary level, so a group term
+     * may be multi-word and may span/split tokens — this is what lets "frontend" ↔ "front end",
+     * "side by side" ↔ "sxs" / "utv", and "a-arm" ↔ "control arm" all work (a token-level swap
+     * cannot join or split words). Each produced variant is itself stop-word-stripped so it
+     * stays clean under the AND/most operator. Substitution runs against the raw (not
+     * stop-word-stripped) query so multi-word phrases like "side by side" survive intact.
      *
      * @return array{clean:string, variants:string[]}
      */
     private function expandQuery(string $query): array
     {
         $stop = $this->relevanceConfig->getStopwords();
-        $tokens = array_values(array_filter(
-            preg_split('/\s+/', trim(mb_strtolower($query))) ?: [],
-            static fn ($t) => $t !== ''
-        ));
-        $kept = array_values(array_filter($tokens, static fn ($t) => !in_array($t, $stop, true)));
-        $clean = $kept ? implode(' ', $kept) : trim($query);   // don't blank an all-stopword query
+        $lower = trim(mb_strtolower($query));
+        $stripStop = static function (string $phrase) use ($stop): string {
+            return implode(' ', array_filter(
+                preg_split('/\s+/', $phrase) ?: [],
+                static fn ($t) => $t !== '' && !in_array($t, $stop, true)
+            ));
+        };
+
+        $clean = $stripStop($lower) ?: $lower;   // don't blank an all-stopword query
 
         $variants = [];
         foreach ($this->relevanceConfig->getSynonymGroups() as $group) {
-            foreach ($kept as $i => $token) {
-                if (!in_array($token, $group, true)) {
+            foreach ($group as $term) {
+                if ($term === '') {
+                    continue;
+                }
+                $pattern = '/\b' . preg_quote($term, '/') . '\b/u';
+                if (!preg_match($pattern, $lower)) {
                     continue;
                 }
                 foreach ($group as $syn) {
-                    if ($syn !== $token) {
-                        $swap = $kept;
-                        $swap[$i] = $syn;
-                        $variants[] = implode(' ', $swap);
+                    if ($syn === $term) {
+                        continue;
+                    }
+                    $variant = $stripStop(trim((string) preg_replace($pattern, $syn, $lower)));
+                    if ($variant !== '' && $variant !== $clean && !in_array($variant, $variants, true)) {
+                        $variants[] = $variant;
                     }
                 }
             }
         }
-        $variants = array_slice(array_values(array_unique($variants)), 0, 8);
+        $variants = array_slice($variants, 0, 8);
 
         return ['clean' => $clean, 'variants' => $variants];
     }

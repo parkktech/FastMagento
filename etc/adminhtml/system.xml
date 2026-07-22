@@ -87,6 +87,37 @@
                     <label>Facet Attributes</label>
                     <comment>Comma-separated attribute codes to build search facets from (e.g. part_type,compatible_platforms). Must be filterable in the native search index. Category is always included.</comment>
                 </field>
+
+                <field id="search_operator" translate="label comment" type="select" sortOrder="90" showInDefault="1" showInWebsite="1" showInStore="1">
+                    <label>Multi-Term Operator</label>
+                    <source_model>ParkkTech\FastMagento\Model\Config\Source\SearchOperator</source_model>
+                    <comment><![CDATA[How multiple words combine. <em>Any</em> = OR (a match on one word is enough — broadest). <em>Most</em> = 75% of words must match. <em>All</em> = AND (every word must match — most precise). Use All/Most to stop e.g. "Frontend UTV" returning frontend-only products.]]></comment>
+                </field>
+
+                <field id="phrase_match_boost" translate="label comment" type="text" sortOrder="100" showInDefault="1" showInWebsite="1" showInStore="1">
+                    <label>Exact / Phrase Match Boost</label>
+                    <comment>How strongly to rank products where the query appears as a contiguous phrase (in name/keywords) above scattered-word hits. Higher = exact matches rank harder. 0 disables. Default 4.</comment>
+                    <validate>validate-number validate-zero-or-greater</validate>
+                </field>
+
+                <field id="search_keywords_enabled" translate="label comment" type="select" sortOrder="110" showInDefault="1" showInWebsite="1" showInStore="1">
+                    <label>AI Search Keywords</label>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <comment><![CDATA[Search the AI-generated per-product keyword layer (<em>fm_search_keywords</em>). Populate it off the request path with <em>bin/magento fastmagento:search-keywords:generate</em>, then reindex catalogsearch_fulltext. Lets a "UTV" product surface for "side-by-side / SxS" even when its copy never says it.]]></comment>
+                </field>
+
+                <field id="search_keywords_weight" translate="label comment" type="text" sortOrder="120" showInDefault="1" showInWebsite="1" showInStore="1">
+                    <label>AI Keyword Weight</label>
+                    <comment>Search weight for the AI keyword field, relative to other attributes (name defaults to 5). Default 8 = keyword hits rank strongly. Only used when AI Search Keywords is enabled.</comment>
+                    <validate>validate-number validate-greater-than-zero</validate>
+                    <depends><field id="search_keywords_enabled">1</field></depends>
+                </field>
+
+                <field id="keyword_source_attributes" translate="label comment" type="text" sortOrder="130" showInDefault="1" showInWebsite="0" showInStore="0">
+                    <label>AI Keyword Source Attributes</label>
+                    <comment>Comma-separated attribute codes whose labels give the AI product context when generating keywords (e.g. part_type,make,model). Blank = reuse the Facet Attributes above.</comment>
+                    <depends><field id="search_keywords_enabled">1</field></depends>
+                </field>
             </group>
 
             <!-- AI Assistant (Claude) -->
