@@ -1,6 +1,17 @@
-# FastMagento — OpenSearch Serving Layer & Large-Catalog Toolkit for Magento 2
+<h1 align="center">⚡ FastMagento</h1>
+<p align="center"><strong>OpenSearch Serving Layer &amp; Large-Catalog Toolkit for Magento&nbsp;2</strong><br/>
+<em>Millisecond pages. Real-time index. Search so good it's almost unfair.</em></p>
 
-> Magento 2 is powerful, extensible, and — on a big catalog — perfectly happy to run 20,000 SQL
+<p align="center">
+  <img alt="Magento" src="https://img.shields.io/badge/Magento-2.4.x-f46f25?logo=magento&logoColor=white"/>
+  <img alt="OpenSearch" src="https://img.shields.io/badge/OpenSearch-1.x%20%7C%202.x-005EB8?logo=opensearch&logoColor=white"/>
+  <img alt="PHP" src="https://img.shields.io/badge/PHP-8.1--8.3-777bb4?logo=php&logoColor=white"/>
+  <img alt="Base Magento only" src="https://img.shields.io/badge/base%20Magento-no%20core%20patches-2ea44f"/>
+  <img alt="FPC / Varnish safe" src="https://img.shields.io/badge/FPC%20%2F%20Varnish-safe-2ea44f"/>
+  <img alt="AI search" src="https://img.shields.io/badge/AI%20search-Claude-8A63D2"/>
+</p>
+
+> 🐌➡️🚀 Magento 2 is powerful, extensible, and — on a big catalog — perfectly happy to run 20,000 SQL
 > queries to render a homepage and loop your inventory tables *thirty times* just because you
 > **dared** to add something to the cart. FastMagento is what happened when we got tired of
 > watching the spinner.
@@ -186,21 +197,21 @@ you came for:
 
 | Feature | What it fixes |
 |---|---|
-| [OpenSearch product serving (PHP loads from OS)](#feature-opensearch-product-serving-zero-eav-reads) | 0 product/EAV SQL on PDP, cart, listings |
-| [Category & navigation serving](#feature-category--navigation-serving) | 0 category EAV reads for menu / breadcrumbs / nav |
-| [Related, up-sell, cross-sell & sliders](#feature-related-up-sell-cross-sell--product-sliders) | per-item EAV + URL-rewrite N+1 |
-| [All product types served](#feature-all-product-types-served) | simple, configurable, downloadable, virtual |
-| [Autocomplete search (as-you-type)](#feature-autocomplete-search-as-you-type-dropdown) | slow native autocomplete |
-| [Instant search results page (live SERP)](#feature-instant-search-results-page-live-serp-no-reload) | full page reload to search |
-| [Live layered navigation on search](#feature-live-layered-navigation-on-search-instant-shop-by) | full reload to filter / "Shop By" |
-| [AI-powered search relevance & keywords](#ai-powered-search-relevance) | poor Magento relevance on big catalogs |
-| [Fast Checkout](#feature-fast-checkout--no-more-30-inventory-loops) | 30× inventory loops on add-to-cart / cart |
-| [Real-time stock & price sync](#feature-real-time-stock--price-sync) | stale index after orders / rule changes |
-| [Per-customer-group & B2B pricing](#feature-per-customer-group--b2b-pricing-served-from-the-index) | per-group price N+1 |
-| [Paginated attribute options (50k+)](#feature-paginated-attribute-options--manage-50000-options-without-crashing) | attribute page crashing at 50k+ options |
-| [Faster admin on the same hardware](#feature-faster-admin-on-the-same-hardware) | admin slow while frontend hits the DB |
-| [Read-path resilience & fallback](#feature-read-path-resilience--fallback) | OpenSearch outage safety |
-| [Drop-in & third-party transparent](#feature-drop-in--third-party-transparent-base-magento-only) | going fast without core patches |
+| 📦 [OpenSearch product serving (PHP loads from OS)](#feature-opensearch-product-serving-zero-eav-reads) | 0 product/EAV SQL on PDP, cart, listings |
+| 🗂️ [Category & navigation serving](#feature-category--navigation-serving) | 0 category EAV reads for menu / breadcrumbs / nav |
+| 🔗 [Related, up-sell, cross-sell & sliders](#feature-related-up-sell-cross-sell--product-sliders) | per-item EAV + URL-rewrite N+1 |
+| 🧩 [All product types served](#feature-all-product-types-served) | simple, configurable, downloadable, virtual |
+| ⌨️ [Autocomplete search (as-you-type)](#feature-autocomplete-search-as-you-type-dropdown) | slow native autocomplete |
+| ⚡ [Instant search results page (live SERP)](#feature-instant-search-results-page-live-serp-no-reload) | full page reload to search |
+| 🎛️ [Live layered navigation on search](#feature-live-layered-navigation-on-search-instant-shop-by) | full reload to filter / "Shop By" |
+| 🤖 [AI-powered search relevance & keywords](#ai-powered-search-relevance-search-so-good-its-almost-unfair) | poor Magento relevance on big catalogs |
+| 🛒 [Fast Checkout](#feature-fast-checkout--no-more-30-inventory-loops) | 30× inventory loops on add-to-cart / cart |
+| 🔄 [Real-time stock & price sync](#feature-real-time-stock--price-sync) | stale index after orders / rule changes |
+| 💲 [Per-customer-group & B2B pricing](#feature-per-customer-group--b2b-pricing-served-from-the-index) | per-group price N+1 |
+| 🎨 [Paginated attribute options (50k+)](#feature-paginated-attribute-options--manage-50000-options-without-crashing) | attribute page crashing at 50k+ options |
+| 🏎️ [Faster admin on the same hardware](#feature-faster-admin-on-the-same-hardware) | admin slow while frontend hits the DB |
+| 🛟 [Read-path resilience & fallback](#feature-read-path-resilience--fallback) | OpenSearch outage safety |
+| 🔌 [Drop-in & third-party transparent](#feature-drop-in--third-party-transparent-base-magento-only) | going fast without core patches |
 
 ---
 
@@ -400,6 +411,28 @@ and builds the language layer for you:
   `front end` (or `sxs` and `utv`) return **identical** results in the same order.
 
 Everything below is the ranking engine those AI layers feed into.
+
+### Real search wins (across niches)
+
+Native Magento treats each of the left-hand queries as a *different word* and returns junk (or
+nothing). FastMagento learns they're the same thing — from your own catalog — and returns the right
+products, ranked the same either way:
+
+| A shopper types… | Native Magento | FastMagento (AI-learned) | Niche |
+|---|---|---|---|
+| `frontend` vs `front end` | different results / 1 hit | **identical** results | off-road / auto |
+| `top end` vs `top-end` | split, inconsistent | **identical** — same engine parts | performance auto |
+| `side by side` / `sxs` | matches the word "side" | **UTV / side-by-side rigs** | powersports |
+| `t-shirt` / `tshirt` / `tee` | three different result sets | **one** result set | apparel |
+| `34E` / `34DD` | miss | **same cup size** surfaced | lingerie |
+| `ebike` / `e-bike` / `electric bike` | split | **identical** | cycling |
+| `usb-c` / `usb c` / `type-c` | split | **identical** | electronics |
+| `allen key` / `hex key` / `allen wrench` | miss | **same tool** | hardware / tools |
+| `a-arm` / `control arm` | miss | **same suspension part** | off-road |
+| `u-bolt` / `ubolt` | split | **identical** | trailer / auto |
+
+The magic: you don't type any of these in by hand. The **AI discovers them from *your* products**,
+so the wins match *your* niche — whatever you sell.
 
 ### Relevance engine
 
