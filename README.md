@@ -350,14 +350,23 @@ facets via `FastMagento > Search > Facet Attributes`.
 
 ## Feature: Fast Checkout — no more 30× inventory loops
 
-Native Magento hydrates each cart line from a ~217-query product collection (EAV ≈119 + MSI stock
-≈71 + downloadable ≈27) and re-checks salable quantity ~30 times per line on add-to-cart **and**
-again on cart load. **Fast Checkout** (on by default) serves those line products — including
-configurable variants — from the index and drops the redundant revalidation, so cart/checkout
-render is **flat regardless of cart size** (a realistic 7-item cart goes from ~4 s to ~0.4 s). One
-master toggle turns on the whole fast pipeline (OS-serve + optimistic stock + fast stock sync);
-order placement still gates stock by SKU so it **cannot oversell**, and anything not fully in the
-index falls back to native automatically.
+> **Imagine a Magento where your customers aren't punished for adding *more* to their cart — or for
+> you offering richer sales-rule flexibility.** Our cart paints the DOM in **under a second whether
+> there's 1 item or 20 highly-configured products** — something natively impossible in Magento
+> without slowing checkout to a crawl.
+
+Here's why native Magento *does* punish a full cart: it hydrates each line from a ~217-query product
+collection (EAV ≈119 + MSI stock ≈71 + downloadable ≈27) and re-checks salable quantity ~30 times
+per line on add-to-cart **and** again on cart load — so every extra item, every extra configurable
+variant, and every extra sales/catalog rule piles on more work. Cost grows with the size and
+complexity of the cart, exactly when the shopper is closest to buying.
+
+**Fast Checkout** (on by default) serves those line products — including configurable variants —
+from the index and drops the redundant revalidation, so cart/checkout render is **flat regardless
+of cart size** (a realistic 7-item cart goes from ~4 s to ~0.4 s; a 20-line highly-configured cart
+stays under a second). One master toggle turns on the whole fast pipeline (OS-serve + optimistic
+stock + fast stock sync); order placement still gates stock by SKU so it **cannot oversell**, and
+anything not fully in the index falls back to native automatically.
 
 ## Feature: Real-time stock & price sync
 
