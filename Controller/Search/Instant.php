@@ -46,9 +46,10 @@ class Instant extends Action
     }
 
     /**
-     * Add human labels to facet options: the category facet resolves ids to names from the
-     * OpenSearch tree; other facets keep their raw values (option-id labels can be layered
-     * in later from the attribute source).
+     * Finalise facet display. Option labels already come from OpenSearch (InstantSearch pulls
+     * {code}_value from the native index _source), so here we only: set the facet heading, resolve
+     * category ids to names from the OpenSearch category tree, and drop options that carry no
+     * label (a stray id) or root/site categories. No DB/EAV lookups — everything is OS-served.
      *
      * @param array<int, array<string, mixed>> $facets
      * @return array<int, array<string, mixed>>
@@ -56,8 +57,9 @@ class Instant extends Action
     private function labelFacets(array $facets): array
     {
         foreach ($facets as &$facet) {
-            $isCategory = ($facet['attribute'] ?? null) === 'category';
-            $facet['label'] = $isCategory ? 'Category' : ucwords(str_replace('_', ' ', (string) $facet['attribute']));
+            $code = (string) ($facet['attribute'] ?? '');
+            $isCategory = $code === 'category';
+            $facet['label'] = $isCategory ? 'Category' : ucwords(str_replace('_', ' ', $code));
             foreach ($facet['options'] as &$option) {
                 if ($isCategory) {
                     $doc = $this->categoryData->getById((int) $option['value']);
@@ -65,8 +67,8 @@ class Instant extends Action
                     if (!$doc || (int) ($doc['level'] ?? 0) < 2) {
                         $option['skip'] = true;   // root/site categories
                     }
-                } else {
-                    $option['label'] = $option['value'];
+                } elseif (($option['label'] ?? '') === '') {
+                    $option['skip'] = true;       // id with no OS label → never show a raw id
                 }
             }
             unset($option);

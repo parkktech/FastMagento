@@ -8,7 +8,13 @@
                 <opensearch_category_index_prefix>categories</opensearch_category_index_prefix>
             </indexing>
             <search>
-                <facet_attributes></facet_attributes>
+                <!-- Attribute facets shown on the instant search results page (comma-separated
+                     attribute codes). SELECT-type filterable attributes only: their option
+                     labels resolve cleanly from OpenSearch. Multi-select attributes are not
+                     included here — their id→label pairing can't be resolved from the native
+                     index alone (see InstantSearch::bucketLabel) and needs an indexed option
+                     dictionary (follow-up). Admin-overridable under FastMagento > Search. -->
+                <facet_attributes>part_type,color,size,link_style,shock_spacing</facet_attributes>
                 <typo_tolerance>1</typo_tolerance>
                 <boost_in_stock>1</boost_in_stock>
                 <custom_ranking_direction>desc</custom_ranking_direction>

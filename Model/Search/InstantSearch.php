@@ -235,7 +235,15 @@ class InstantSearch
             'category' => ['terms' => ['field' => 'category_ids', 'size' => 15]],
         ];
         foreach ($this->relevanceConfig->getFacetAttributes() as $code) {
-            $aggs[$code] = ['terms' => ['field' => $code, 'size' => 15]];
+            // Filterable select/multiselect attributes are indexed as option ids on {code}, with
+            // the human label on {code}_value. Pull one hit per bucket carrying BOTH (they are
+            // parallel arrays) so the option label comes straight from OpenSearch — no DB/EAV.
+            $aggs[$code] = [
+                'terms' => ['field' => $code, 'size' => 15],
+                'aggs' => [
+                    'label' => ['top_hits' => ['size' => 1, '_source' => [$code, $code . '_value']]],
+                ],
+            ];
         }
         return $aggs;
     }
@@ -547,16 +555,49 @@ class InstantSearch
         foreach ($aggregations as $code => $agg) {
             $options = [];
             foreach ($agg['buckets'] ?? [] as $bucket) {
-                $options[] = [
+                $option = [
                     'value' => (string) $bucket['key'],
                     'count' => (int) $bucket['doc_count'],
                 ];
+                // Resolve the option label from the bucket's top hit (attribute facets only;
+                // the category facet has no sub-agg and is labelled from the tree downstream).
+                $label = $this->bucketLabel($code, (string) $bucket['key'], $bucket);
+                if ($label !== null) {
+                    $option['label'] = $label;
+                }
+                $options[] = $option;
             }
             if ($options) {
                 $facets[] = ['attribute' => $code, 'options' => $options];
             }
         }
         return $facets;
+    }
+
+    /**
+     * Human label for a facet bucket, pulled from the bucket's top hit _source (from OpenSearch —
+     * never the DB). The native index stores option ids on {code} and labels on {code}_value, but
+     * on a MULTI-value doc those two arrays are sorted independently (ids numeric, labels
+     * alphabetic), so their positions do NOT correspond and an id can't be mapped to its label
+     * from a multi-value hit. We therefore trust ONLY an unambiguous single-value hit (one id ==
+     * the bucket key, one label) — always the case for select attributes. Returns null otherwise
+     * (category facet, or a value we can't label safely), so the caller drops it rather than
+     * showing a wrong or raw label.
+     *
+     * @param array<string, mixed> $bucket
+     */
+    private function bucketLabel(string $code, string $key, array $bucket): ?string
+    {
+        $source = $bucket['label']['hits']['hits'][0]['_source'] ?? null;
+        if (!is_array($source)) {
+            return null;
+        }
+        $ids = array_map('strval', (array) ($source[$code] ?? []));
+        $labels = array_values((array) ($source[$code . '_value'] ?? []));
+        if (count($ids) === 1 && count($labels) === 1 && $ids[0] === $key && $labels[0] !== '') {
+            return (string) $labels[0];
+        }
+        return null;
     }
 
     private function getClient()
