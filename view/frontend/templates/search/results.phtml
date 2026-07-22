@@ -11,7 +11,7 @@ $products = $block->getProducts();
             <?php foreach ($products as $product): ?>
                 <div class="product-item">
                     <a href="<?= $block->escapeUrl($block->getProductUrl($product)) ?>">
-                        <img src="<?= $block->getProductImage($product) ?>" alt="<?= $block->escapeHtml($product['name'] ?? '') ?>">
+                        <img src="<?= $block->escapeUrl($block->getProductImage($product)) ?>" alt="<?= $block->escapeHtml($product['name'] ?? '') ?>">
                         <h2><?= $block->escapeHtml($product['name'] ?? '') ?></h2>
                         <span class="price"><?= $block->escapeHtml($product['final_price'] ?? 'N/A') ?></span>
                     </a>

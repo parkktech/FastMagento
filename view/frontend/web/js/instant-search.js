@@ -25,8 +25,16 @@ define(['jquery'], function ($) {
             return m ? decodeURIComponent(m[1].replace(/\+/g, ' ')) : '';
         }
 
+        // Escapes for BOTH text and double/single-quoted attribute contexts (values are
+        // concatenated into attributes like src="..." / value="..."), so quotes must be encoded
+        // too — a plain text-node escape leaves " and ' through and allows attribute breakout.
         function escapeHtml(str) {
-            return $('<div>').text(str == null ? '' : str).html();
+            return String(str == null ? '' : str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
         }
 
         function requestData() {

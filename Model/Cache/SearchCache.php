@@ -36,7 +36,9 @@ class SearchCache
         $cachedData = $this->cache->load($cacheKey);
 
         if ($cachedData) {
-            return unserialize($cachedData);
+            // JSON, not native unserialize() — the cache payload is plain array data and JSON
+            // decode cannot instantiate objects (no PHP object-injection surface).
+            return json_decode($cachedData, true) ?: [];
         }
 
         try {
@@ -57,7 +59,7 @@ class SearchCache
                 $results[] = $hit['_source'];
             }
 
-            $this->cache->save(serialize($results), $cacheKey, ['fastmagento_search'], 3600);
+            $this->cache->save(json_encode($results), $cacheKey, ['fastmagento_search'], 3600);
             return $results;
         } catch (\Exception $e) {
             $this->logger->error('SearchCache error: ' . $e->getMessage());

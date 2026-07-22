@@ -8,6 +8,8 @@ use Magento\Framework\View\Result\PageFactory;
 
 class Index extends Action
 {
+    const ADMIN_RESOURCE = 'ParkkTech_FastMagento::config';
+
     private $resultPageFactory;
 
     public function __construct(Context $context, PageFactory $resultPageFactory)
