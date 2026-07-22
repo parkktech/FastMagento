@@ -12,6 +12,29 @@ The goal is to drive product/EAV SQL toward zero on the hot paths.
 **🔗 See it in action:** [www.diyoffroad.com](https://www.diyoffroad.com/) — a live storefront
 running this serving layer.
 
+### Built for large, attribute-heavy, complex-configurable catalogs
+
+This extension was designed and hardened against a catalog where native Magento hurts the most —
+lots of products, lots of attributes, and configurables with **hundreds** of variants. Everything
+in this README is measured on that reference catalog:
+
+| Dimension | This catalog |
+|---|---:|
+| Total products | **14,604** |
+| — simple / downloadable / virtual / configurable | 13,223 / 1,318 / 43 / 20 |
+| Product attributes | **101** |
+| Attribute sets | **11** |
+| Configurables with **> 250** variants | **all 20** |
+| **Largest single configurable** | **660 variants** (2 axes) |
+
+Native Magento prices, hydrates and stock-checks a configurable by iterating **every** child, so
+cost scales with variant count — a **660-variant** product is a worst case that makes cold PDP,
+cart and checkout crawl. The whole point of the serving layer is that these operations become
+**index reads that stay flat as variant count and attribute count grow**. If your catalog is
+large, EAV-heavy, or full of big configurables, this is exactly the workload it targets; a small,
+simple catalog will see the query reductions but feel less wall-clock benefit (see the note under
+Benchmarks).
+
 **Measured on a production-sized catalog:**
 
 | Page | Before | After |
@@ -257,6 +280,59 @@ bin/magento indexer:reindex fastmagento_category
 
 ---
 
+## Configuration reference
+
+All settings live under **Stores → Configuration → FastMagento**. Every value is store-view
+scoped unless noted; sensible defaults ship in `etc/config.xml` so the extension is usable
+immediately after install.
+
+### Indexing
+
+| Setting | Default | What it does |
+|---|---|---|
+| Enable Real-time Indexing | On | Update OpenSearch docs synchronously on catalog save (mview). |
+| Enable Cron Indexing | On | Let the `mview` cron flush pending changes on a schedule. |
+| Product Index Prefix | `products` | Index name prefix for the product serving index. |
+| Category Index Prefix | `categories` | Index name prefix for the category serving index. |
+
+### Instant Search & Relevance
+
+| Setting | Default | What it does |
+|---|---|---|
+| Searchable Attributes & Weights | name, sku, descriptions | The fields searched and their relative weights (higher = ranks stronger). One grid instead of per-attribute Search Weight. |
+| Typo Tolerance | On | Fuzzy matching (`fuzziness: AUTO`) so misspellings still match. |
+| Boost In-Stock Products | On | Rank in-stock above out-of-stock as a tie-breaker. |
+| Custom Ranking Attribute / Direction | — | Optional numeric secondary sort after text relevance (e.g. bestseller, rating). |
+| **Multi-Term Operator** | Any (OR) | How multiple words combine: **Any** (broadest), **Most** (75%), **All** (AND, most precise). |
+| **Exact / Phrase Match Boost** | 4 | How hard a contiguous-phrase match outranks scattered-word hits. 0 disables. |
+| Synonyms / Thesaurus | starter DB | Equivalence groups (one per line). Ships with a bundled starter database; extend by hand or with the AI tool. |
+| Stop Words | common English | Words ignored in queries. |
+| Facet Attributes | — | Comma-separated attribute codes that build the search-results facets (single-select). |
+| **AI Search Keywords** | Off | Search the per-product AI keyword layer (`fm_search_keywords`). Enable after populating it (below). |
+| **AI Keyword Weight** | 8 | Search weight of the AI keyword field when enabled. |
+| **AI Keyword Source Attributes** | facet attrs | Attribute codes whose labels give the AI product context when generating keywords. |
+
+### AI Assistant (Claude)
+
+| Setting | Default | What it does |
+|---|---|---|
+| Claude API Key | — | Stored **encrypted**. Enables the AI thesaurus + keyword tools. Leave blank to disable AI. |
+| Model | `claude-opus-4-8` | Claude model id. **Use a fast model (Haiku/Sonnet) for large keyword runs.** |
+| Max Catalogue Terms | 1200 | Upper bound on vocabulary sent to the model (keeps prompts bounded on big catalogs). |
+| Generate Thesaurus | button | Scrapes your attribute labels, categories and product names → discovers synonym/compound groups → merges into Synonyms. |
+
+### Fast Checkout
+
+| Setting | Default | What it does |
+|---|---|---|
+| **Enable Fast Checkout** | On | Master toggle: serve cart/checkout line products from the index + optimistic stock. Cannot oversell (SKU-gated at placement); falls back to native for anything not fully indexed. |
+| OS-Serve Quote Items *(advanced)* | Off | Serve the quote-item collection from OpenSearch by itself. |
+| Optimistic Stock *(advanced)* | Off | Skip the redundant per-load MSI preload; rely on the placement-time gate. |
+| Fast Stock Sync *(advanced)* | Off | Patch only stock fields of affected docs instead of a full reprojection. |
+| Configurable Line Name | parent | Show the configurable (parent) or purchased child name on cart/checkout lines. |
+
+---
+
 ## Architecture
 
 ### Serving layer
@@ -292,6 +368,61 @@ Each reprojects only the affected products (and their composite parents) and is 
 (logged, never surfaced) so a sync failure cannot break checkout, a refund or a stock save.
 The stock *write* remains native Magento (`StockManagement`); the sync only keeps the index
 current.
+
+---
+
+## Operations & maintenance
+
+### Reindexing
+
+```bash
+bin/magento indexer:reindex fastmagento_product      # product serving index
+bin/magento indexer:reindex fastmagento_category     # category serving index
+bin/magento indexer:reindex catalogsearch_fulltext   # native search index (after AI keyword runs)
+```
+
+Day to day, real-time + cron indexing keep both indexes current; a full reindex is only needed
+after a bulk import or a mapping change. Reindexing streams documents in bulk chunks, so memory
+stays flat regardless of catalog size.
+
+### AI search-mapping tools
+
+The intended setup flow — *install → add a Claude key → run the mapping tools → best search*:
+
+1. **Thesaurus** (admin): `FastMagento > AI Assistant > Generate Thesaurus`. Scrapes your own
+   content (attribute labels, categories, product names) and merges discovered synonym/compound
+   groups into `Search > Synonyms`. Re-runnable; merge-safe.
+2. **Per-product keywords** (CLI): populate `fm_search_keywords`, then reindex fulltext.
+
+   ```bash
+   # dry-run a sample first (no API calls, no writes)
+   bin/magento fastmagento:search-keywords:generate --dry-run --limit=25
+
+   # generate for the whole catalogue (resumable; re-run continues where it left off)
+   bin/magento fastmagento:search-keywords:generate --batch=25
+
+   # scope / control
+   #   --from N --to N     entity_id range
+   #   --limit N           cap this run
+   #   --force             regenerate products that already have keywords
+   bin/magento indexer:reindex catalogsearch_fulltext
+   ```
+
+   Then enable `Search > AI Search Keywords`. For a 14k+ catalog, set a fast model under
+   `AI Assistant > Model` (Haiku/Sonnet) — keyword extraction does not need the largest model.
+
+### Measuring search relevance
+
+```bash
+# run the golden queries (docs/tools/golden-queries.json) through the real query builder
+php app/code/ParkkTech/FastMagento/docs/tools/search-relevance.php
+
+# ad-hoc: compare specific queries with scores
+php app/code/ParkkTech/FastMagento/docs/tools/search-relevance.php "front end" "sxs" "skid plate"
+```
+
+Prints the ranked top-N with `_score` and pass/fail checks, so any relevance/synonym change is
+measured before and after — not guessed.
 
 ---
 
@@ -352,6 +483,8 @@ curl -s "http://localhost:9200/magento2_products/_mapping?pretty"
 
 ## Test tooling
 
+- `docs/tools/search-relevance.php` + `docs/tools/golden-queries.json` — relevance harness: runs
+  golden queries through the real query builder and prints ranked hits with scores + pass/fail.
 - `docs/tools/create-downloadable-test.php` — creates a downloadable product with multiple
   purchasable links and product-level samples to exercise the full downloadable render path.
 - `docs/tools/query-profile.sh` — DB-query profiler used to verify OpenSearch serving.
