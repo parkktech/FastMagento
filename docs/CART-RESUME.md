@@ -10,7 +10,30 @@ Handoff for resuming the cart/checkout OpenSearch optimization. Read these first
 ## ▶ CONTINUE HERE — next session (state as of 2026-07-21)
 
 **Goal:** sub-100ms checkout; high-value/heavy carts must NOT be the slowest. Staged plan:
-Stage 1 (flatten the variable cost) = DONE. Stage 2 (fast-path totals) = NOT STARTED.
+Stage 1 (flatten the variable cost) = DONE. Stage 2 (fast-path totals) = RE-SCOPED — see the
+2026-07-21 profiler finding below: the totals-bypass premise was a developer-mode cold-start
+artifact; the real lever is production mode / opcache, not a collector-chain rewrite. Stage 3
+stock-only OS sync (fast_stock_sync) = DONE + flag-gated (commit dfc57862c).
+
+**⚠ STAGE 2 PROFILER FINDING (2026-07-21) — the totals-bypass is optimizing the wrong thing.**
+`docs/tools/collect-profile.php` (per-collector, warm median) + cold/warm first-call timing show:
+- Whole `collectTotals`, WARM: heavy 4-config cart 91304 = **~13 ms** (tax collectors ~8.5 ms of
+  it: Tax 4.3 + Tax\Subtotal 3.5 + Tax\Shipping 0.7; Stripe InitialFee 1.7; everything else <1).
+- Same cart COLD (first call in a fresh PHP worker) = **236 ms**; 2nd call (warm) = **11 ms**.
+- First `collectTotals` of successive DISTINCT quotes in ONE process: 239 → 51 → 36 ms. So ~190 ms
+  of the "cold 240 ms" is **one-time process warmup** — DI object-graph build + opcache compile of
+  the tax/salesrule/quote classes + first tax-rate/config queries — NOT the totals arithmetic.
+- Store posture: **developer mode**, `opcache.validate_timestamps=On`, no `opcache.preload`, no
+  runtime compiled-DI. That is exactly what inflates the cold cost.
+
+**Implication:** bypassing the collector chain to "compute totals from OS prices" would save at
+most the ~7–13 ms of warm arithmetic (mostly tax) and CANNOT touch the ~190 ms cold warmup (a
+custom endpoint still builds a DI graph, loads the quote, resolves price/tax). And tax is
+**address-dependent** (destination rate × product/customer tax class) — it is not precomputable in
+the per-product index. So a totals fast-path is high money-risk on checkout for a single-digit-ms
+warm gain. **Do NOT build the collector-chain bypass.** The genuine sub-100ms lever is production
+mode + `setup:di:compile` + `opcache.validate_timestamps=0` + `opcache.preload` + persistent
+Redis config/tax cache — i.e. former step 3 (production-mode measurement) is now step 1.
 
 **Flags (all default OFF; `Stores > Config > FastMagento > Cart / Checkout Optimization`):**
 - `fastmagento/cart/os_serve_quote_items` — OS-serve the quote-item product load (frontend +
@@ -35,20 +58,29 @@ configurable price resolution). The quote LOAD is already flat; collectTotals is
 cost. Fixed framework overhead is ~150–250ms (webapi routing/auth/serialize) — production mode
 (opcache.validate_timestamps off) is the free lever there; this store is in DEVELOPER mode.
 
-**NEXT STEPS, in priority order:**
-1. **Stage 2 — fast-path totals** for OS-servable carts: bypass Magento's collector chain,
-   compute subtotal/tax/discount from OS-preindexed prices (catalog_rule_prices per group +
-   tier already indexed). Either a custom lightweight controller/endpoint or a collectTotals
-   short-circuit. HARD: must reproduce tax + cart-rule + shipping correctness. This is the only
-   path toward <100ms.
-2. **Lightweight stock-only OS sync on order** (concern #1, NOT built): `StockSyncer::
-   flushDeferredSync` still calls `productIndexer->executeList()` = full product reproject
-   (loads whole EAV model) just to update stock. Replace with: mget the doc → patch is_in_stock/
-   stock_data.qty/extension_attributes.stock_item (+ composite child_products[].is_in_stock from
-   cataloginventory_stock_item) → push the patched _source back (bulk index). Fallback to
-   executeList on any miss. Stock doc shape verified in ProductIndexer lines 258-275, 423-429,
-   849-882 (child shape).
-3. Production-mode measurement to quantify the real framework floor.
+**NEXT STEPS, in priority order (RE-ORDERED after the profiler finding):**
+1. **Production-mode measurement** (was step 3, now #1 — the actual sub-100ms lever). On a
+   staging/prod-mode clone: `setup:di:compile`, `opcache.validate_timestamps=0`,
+   `opcache.preload` a Magento preload list, persistent Redis config/tax cache; then re-measure
+   the real HTTP `/rest/.../totals` call warm. Hypothesis (from the dev-mode decomposition
+   above): the ~190 ms cold-warmup collapses and the whole checkout REST call drops toward the
+   framework floor (auth/routing/serialize + the ~13 ms warm collectTotals). Quantify it before
+   any code fast-path.
+2. **Stage 2 fast-path totals — DEPRIORITIZED / likely NOT worth it.** See the profiler finding:
+   single-digit-ms warm gain, urecoverable cold cost, address-dependent tax not indexable, high
+   money-risk on checkout. Only revisit if (1) shows collectTotals arithmetic (not framework) is
+   still a real fraction of a warm prod request — measured, not assumed.
+3. **Stock-only OS sync — DONE (commit dfc57862c).** `fastmagento/cart/fast_stock_sync` (default
+   0): `StockSyncer::flushDeferredSync` now patches just the stock fields of the affected docs
+   (mget → is_in_stock/stock_data.qty/extension_attributes.stock_item + composite
+   child_products[].{is_in_stock,stock_qty} from cataloginventory_stock_item → bulk re-index),
+   falling back to `executeList` on any miss. Parity proven byte-for-byte vs a full reproject by
+   `docs/tools/stock-patch-verify.php` (simple/configurable-660-child/downloadable/virtual). Left
+   to do: enable in a prod-mode clone and confirm end-to-end after a real order/refund.
+
+**New profiling tools (committed):** `docs/tools/collect-profile.php <quoteId> [area] [iters]`
+(per-collector warm-median breakdown) and `docs/tools/stock-patch-verify.php <id...>` (fast-stock
+parity harness).
 
 **How to resume / test:** enable both flags; harnesses in the session scratchpad
 (`quote-timing.php`, `quote-profile.php`, `collect-profile.php`, `breakdown.php`,
