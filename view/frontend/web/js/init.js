@@ -1,9 +1,7 @@
 require([
-    "jquery",
-    "plpAjax",
-    "pdpAjax"
+    "jquery"
 ], function ($) {
     $(document).ready(function () {
-        console.log("FastMagento OpenSearch is fully initialized!");
+        // FastMagento serving layer initialized.
     });
 });
