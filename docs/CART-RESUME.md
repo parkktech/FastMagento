@@ -5,6 +5,60 @@ Handoff for resuming the cart/checkout OpenSearch optimization. Read these first
 - Project memory `fastmagento-opensearch-work.md` (recent-work section covers the cart profiling + gaps)
 - `git log --oneline -10` (branch `feature/fastmagento-opensearch-layer`, pushed to origin)
 
+---
+
+## ▶ CONTINUE HERE — next session (state as of 2026-07-21)
+
+**Goal:** sub-100ms checkout; high-value/heavy carts must NOT be the slowest. Staged plan:
+Stage 1 (flatten the variable cost) = DONE. Stage 2 (fast-path totals) = NOT STARTED.
+
+**Flags (all default OFF; `Stores > Config > FastMagento > Cart / Checkout Optimization`):**
+- `fastmagento/cart/os_serve_quote_items` — OS-serve the quote-item product load (frontend +
+  webapi_rest + graphql). Alone: simple/downloadable/virtual served; configurables stay NATIVE.
+- `fastmagento/cart/optimistic_stock` — skips redundant pre-placement stock work (core +
+  marketplace qty observers, MSI preload); placement's CheckItemsQuantity stays the gate. ALSO
+  the gate that enables configurable OS-serving. Requires os_serve on.
+- `fastmagento/cart/configurable_line_name` — parent (default) | child, display only.
+
+**WHAT WORKS NOW (Stage 1, all validated + committed, flags default off):**
+- OS-serving quote items in frontend AND webapi/graphql checkout. Group-pricing correct (shell
+  reads the quote-stamped group, not the session). sku→id N+1 cached.
+- Optimistic mode flattens the LOAD: heavy 4-configurable cart 174→11 queries, 75→16ms.
+- Configurables OS-served (optimistic-gated): parent built child-less, in-cart child wired via
+  `registerCartChildren()`. Real browser /rest totals for a config cart: 492→318ms (-35%).
+- Real orders placed via Playwright (Check/Money Order) — guest + configurable — totals
+  byte-for-byte, correct conversion, stock decrement -1/line, NO oversell. Orders cancelled.
+
+**THE REMAINING BOTTLENECK (Stage 2 target):** `collectTotals` ~300–500ms on high-value/
+configurable carts — CPU-bound (tax calculation is dominant, + Stripe per-product checks +
+configurable price resolution). The quote LOAD is already flat; collectTotals is now the whole
+cost. Fixed framework overhead is ~150–250ms (webapi routing/auth/serialize) — production mode
+(opcache.validate_timestamps off) is the free lever there; this store is in DEVELOPER mode.
+
+**NEXT STEPS, in priority order:**
+1. **Stage 2 — fast-path totals** for OS-servable carts: bypass Magento's collector chain,
+   compute subtotal/tax/discount from OS-preindexed prices (catalog_rule_prices per group +
+   tier already indexed). Either a custom lightweight controller/endpoint or a collectTotals
+   short-circuit. HARD: must reproduce tax + cart-rule + shipping correctness. This is the only
+   path toward <100ms.
+2. **Lightweight stock-only OS sync on order** (concern #1, NOT built): `StockSyncer::
+   flushDeferredSync` still calls `productIndexer->executeList()` = full product reproject
+   (loads whole EAV model) just to update stock. Replace with: mget the doc → patch is_in_stock/
+   stock_data.qty/extension_attributes.stock_item (+ composite child_products[].is_in_stock from
+   cataloginventory_stock_item) → push the patched _source back (bulk index). Fallback to
+   executeList on any miss. Stock doc shape verified in ProductIndexer lines 258-275, 423-429,
+   849-882 (child shape).
+3. Production-mode measurement to quantify the real framework floor.
+
+**How to resume / test:** enable both flags; harnesses in the session scratchpad
+(`quote-timing.php`, `quote-profile.php`, `collect-profile.php`, `breakdown.php`,
+`area-measure.php`) + `docs/tools/cart-verify.php` (totals/stock/flags) +
+`docs/SUPERVISED-ORDER-TEST.md`. Test carts: 91291 (guest config), 91304 (heavy 4-config),
+73163 (simple grp1). Check/Money Order + Flat Rate left enabled. Recent commits carry the
+detail — `git log --oneline -15`.
+
+---
+
 ## Environment
 - Local dev `http://www.diyoffroad.loc/` (WSL2 → 127.0.0.1, send `Host: www.diyoffroad.loc`),
   developer mode, OpenSearch :9200, index `magento2_products`.
