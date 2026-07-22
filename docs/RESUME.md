@@ -4,6 +4,57 @@ Start here, then read **`docs/ARCHITECTURE.md`** (the canonical how-it-works map
 points, file responsibilities, gotchas, dormant code). `README.md` is the user-facing doc.
 `git log --oneline` tells the detailed story.
 
+## ⚠️ ACTIVE HANDOFF (2026-07-22, session 2) — READ FIRST
+
+**The dev site is currently pointed at the 500k SCALE DB, not prod.** `app/etc/env.php` `dbname`
+was switched `diyprod_db → diyscale_db` (backup at `app/etc/env.php.diyprod-backup`), and
+`catalog/search/opensearch_index_prefix` set to `scale` (isolated indexes `scale_products` /
+`scale_product_1`; live `magento2_*` untouched). **When benchmarking is done, restore prod:**
+`cp app/etc/env.php.diyprod-backup app/etc/env.php && php bin/magento cache:flush`.
+
+**A 500k reindex is running/finishing in the background** (building `scale_products`, ~518k docs).
+Verify done: `curl -s localhost:9200/scale_products/_count` (~518771) and
+`pgrep -f "indexer:reindex"`.
+
+**MySQL CLI creds:** regenerate a defaults file from env.php (`[client] host/user/password`) to run
+`mysql --defaults-extra-file=... diyscale_db`.
+
+### TODO for this fresh session (in order)
+1. **Wait for the 500k reindex to finish**, then **compile**: `bash bin/magento-compile-safe`
+   (needed for the new attribute-pagination controllers/block/plugin — production mode).
+2. **Test the paginated attribute-option manager** (new, committed, UNTESTED). Admin → Stores →
+   Attributes → Product → edit each and confirm the page opens instantly + add/edit/delete/search:
+   `color` (50k visual swatch), `size` (330 text swatch), `part_type` (1000 select),
+   `compatible_platforms` (1000 multiselect). Confirm search-by-name AND by option-id. Files under
+   `Model/AttributeOption`, `Controller/Adminhtml/AttributeOption`, `Block/Adminhtml/AttributeOption`,
+   `Plugin/Adminhtml/AttributeSaveOptionGuardPlugin`, `view/adminhtml/...`. Admin login needed.
+3. **Run the huge-vs-small benchmark** and fill the README placeholders under
+   `## 📊 Performance at scale — 500,000 products` (page-load / SQL / DOM tables, with vs without —
+   toggle the module via `bin/magento module:disable/enable ParkkTech_FastMagento`). Optionally
+   generate a chart SVG at `docs/img/scale-benchmark.svg`.
+4. **Record the 3 demo GIFs** → `docs/img/demo-{autocomplete,instant-serp,shop-by}.gif` (placeholders
+   already in README). Pipeline: Playwright screenshot sequence → `convert -delay N -loop 0
+   frames/*.png out.gif` (ImageMagick `convert` present; ffmpeg is NOT). Source: local 500k store
+   (most impressive) or live diyoffroad.com.
+5. **Finish remaining README feature hooks** — a few sections still lack the "as-seen-on-TV" hook
+   (All product types, Related/sliders, B2B pricing, Read-path resilience).
+6. **Push the tested code to the extension master**: the attribute-pagination + README work is on
+   `origin` (diy-offroad) but NOT yet on `fastmagento` master. After testing:
+   `git subtree split --prefix=app/code/ParkkTech/FastMagento -b fastmagento-sync && git push fastmagento fastmagento-sync:master`.
+7. **Then build the approved PLP OS layered navigation** (server-side, SEO-safe) — see below / ARCHITECTURE §10.
+
+### What shipped this session (2026-07-22 pt2)
+- **Search optimization layer** (AI keywords, thesaurus, operator, symmetric synonyms, relevance) —
+  see [[fastmagento-search-optimization-layer]]. **Subtree master overridden** onto our branch
+  (osman archived at `archive/osman-master` + tag `osman-master-pre-override`); PR #2 obsolete.
+- **500k scale DB + generator** `docs/tools/scale-catalog.php` — see [[fastmagento-scale-testing]].
+- **Paginated attribute-option manager** (admin, committed, pending compile+test above).
+- **README** fully rewritten: story/humor, per-feature SEO sections with infomercial hooks, AI-search
+  showcase + cross-niche examples, Problem→Solution, demo-GIF + 500k-perf placeholders, badges/icons.
+- Fast Checkout default-on; docs/ARCHITECTURE.md is the canonical map.
+
+---
+
 ## Current state (what's done)
 
 The OpenSearch serving layer is built and live for **PDP, cart/checkout, search, related/up-sell,
