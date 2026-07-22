@@ -1,225 +1,74 @@
 # FastMagento — RESUME HERE (fresh-session pickup)
 
-Read this first, then `docs/OPENSEARCH-SERVING-LAYER-PLAN.md` (roadmap + GSD prompt)
-and `docs/BLOCKERS.md` (decisions/queue). `git log --oneline` tells the story.
+Start here, then read **`docs/ARCHITECTURE.md`** (the canonical how-it-works map — interception
+points, file responsibilities, gotchas, dormant code). `README.md` is the user-facing doc.
+`git log --oneline` tells the detailed story.
+
+## Current state (what's done)
+
+The OpenSearch serving layer is built and live for **PDP, cart/checkout, search, related/up-sell,
+and category *data* (menu/nav/breadcrumbs/URLs)** — all served from `magento2_products` /
+`magento2_categories` with product/EAV SQL driven toward zero on the hot paths. MySQL stays the
+source of truth; everything degrades to native EAV on a miss or an OpenSearch outage.
+
+- **Product serving** — `ShellNoEavProduct` (no-op `load()`, getters from `_source`) at every
+  read choke point (`Product::load`, repository, collections, price models, stock registry). §2–3
+  of ARCHITECTURE.md.
+- **Pricing** — per-customer-group catalog-rule price maps in the doc; the ~660-query configurable
+  rule/tier N+1 eliminated; live via `CatalogRuleSyncer`. §5.
+- **Fast Checkout** — OS-served quote-item collection; **on by default** (master
+  `enable_fast_checkout` implies OS-serve + optimistic stock + fast stock sync). Cannot oversell
+  (SKU-gated at placement). §6.
+- **Real-time stock sync** — order/refund/MSI writes reproject off-response via `StockSyncer`. §4.
+- **Category serving** — whole tree in one search; menu/nav/breadcrumb/layered-nav category
+  attributes + URLs from OS (0 category EAV reads, url_rewrite N+1 collapsed). §2 read-path table.
+- **Search** — realtime autocomplete + live search results page (grid + pagination + layered-nav
+  facets, no reload); relevance overhaul (phrase/all-terms/symmetric synonyms/operator); AI keyword
+  layer (`fm_search_keywords` + CLI); bundled starter thesaurus + content-aware AI thesaurus tool. §7.
+- **All product types** — simple/virtual/downloadable/configurable served (swatches + jsonConfig +
+  add-to-cart from OS); grouped/bundle indexed, add-to-cart not fully exercised.
+
+`README.md` is complete (benchmarks, capacity, config reference, architecture + Mermaid diagram).
+The module is synced to `parkktech/FastMagento` **master** (subtree — see below).
 
 ## Environment (local dev)
-- Branch `feature/fastmagento-opensearch-layer` (FastMagento is a git-subtree of
-  parkktech/FastMagento @ osman-fast-magento; can subtree-push back).
-- Site: `http://www.diyoffroad.loc/` (WSL2 → Windows hosts `127.0.0.1`), **developer
-  mode**, prod DB clone `diyprod_db` (MySQL 8), OpenSearch on :9200.
-- FastMagento index: `magento2_products` (1383 docs). Rebuild:
-  `bin/magento indexer:reindex fastmagento_product`.
-- DB query gate: `bash docs/tools/query-profile.sh enable|<path>|disable`.
+- Branch `feature/fastmagento-opensearch-layer`. Site `http://www.diyoffroad.loc/`, **production
+  mode**, prod DB clone (MySQL 8), OpenSearch :9200. Full product index = **14,604 docs**.
+- Reindex: `bin/magento indexer:reindex fastmagento_product fastmagento_category`
+  (+ `catalogsearch_fulltext` after AI keyword runs).
+- New DI (e.g. a new class/command) in production mode needs a compile — use
+  `bin/magento-compile-safe` (PHP 8.3 segfault-safe settings; see `MAGENTO_DI_COMPILATION_FIX.md`).
+  `opcache.validate_timestamps` is on, so PHP edits to existing classes go live without a compile.
+- Verify serving: `bash docs/tools/query-profile.sh enable|<path>|disable` (PDP/category = 0
+  product/EAV/catalog SQL). Measure relevance: `php docs/tools/search-relevance.php`.
 
-## Working now (verified 200)
-home, PDP (served from OpenSearch — 0 product-data SQL, 30/30 sample), search, cart,
-category (native). Product images synced+resized. di:compile GREEN.
+## Subtree sync (important)
+FastMagento is a git subtree at `app/code/ParkkTech/FastMagento/`. Remotes: `fastmagento` =
+git@github.com:parkktech/FastMagento.git, `origin` = diy-offroad. To publish module changes:
+```
+git subtree split --prefix=app/code/ParkkTech/FastMagento -b fastmagento-sync
+git push fastmagento fastmagento-sync:master        # fast-forward (master == our line now)
+```
+`master` was force-overridden onto our branch (osman's original is preserved at
+`archive/osman-master` + tag `osman-master-pre-override`). Also push the feature branch to `origin`
+to back up. `gh pr edit` hits a projectCards GraphQL error here — use `gh api -X PATCH` for PR edits.
 
-## Indexer performance (the EAV bottleneck — scale work, task #13)
-Measured: old `ProductIndexer::execute()` fired **442 SQL queries/product** (4422 for
-10) via row-at-a-time full-model loads — ~3 full loads/product (redundant
-`factory->load()` + a `getById()` reload per store view), plus per-product
-`getOptionText()` (417 option queries/10 prod), media-gallery, MSI and a **1690-query
-`marketplace_userdata` 3rd-party tax (38% of all queries)**; docs accumulated in one
-array and bulk-flushed once at the very end (index empty for the whole run; OOM at
-scale); `executeFull()` delete+recreate = downtime.
-**Phase A done (shape-preserving, verified vs baseline docs):** single load/product +
-per-run option-label cache + streamed FLUSH_SIZE(200) bulk. → **86 q/product (5.2×),
-0.068s/product (2.8×)**, identical doc keys (unset selects now `['']` not `[false]`).
-**Phase B (todo for 10M):** fully set-based per-chunk extraction (batch maps for
-stock/tier/rule/parent/category) to kill the remaining per-product model load, optional
-module-owned covering indexes / projection table, alias-swap build. See task backlog.
+## NEXT — approved
+**PLP / category grid from OpenSearch — server-side, SEO-safe** (deferred "Phase 2"). Today the
+category page renders natively: per-item product data is already OS-served, but category→product
+**membership**, sort/pagination and **layered-nav filtering** are still native MySQL. Approach:
+serve the category product collection (membership + facets) from OpenSearch **server-side**, keeping
+Magento's native render / canonical URLs / crawlability — NOT by cloning the client-side search app
+(category pages are SEO landing pages). The old dormant path (`Model/Search/ProductSearch`,
+`Block/Product/ListProduct`) is broken/incomplete — do not revive it as-is (see ARCHITECTURE.md §9).
 
-## Configurable products (swatch stress test — in progress)
-- `docs/tools/create-configurable-bras.php [n] [colors] [sizes]` generates configurable
-  "bra" products: `color` = visual (hex) swatch, `size` = text swatch (band×cup, e.g.
-  34DD..46K), one child simple per color×size with own SKU/price(+$3/cup)/stock/image.
-  swatch_input_type lives in `catalog_eav_attribute.additional_data`; swatch values in
-  `eav_attribute_option_swatch` (type 1=visual color, 0=textual).
-- **DB side verified correct**: HER-KEIRA-001 (id 2005) = configurable, 2 super-attrs
-  (color 3 opts, size 4 opts), 12 linked children, indexed into OS doc with
-  child_products[] + configurable_options_<id>.
-- **Fixed:** `ShellNoEavProduct` constructor TypeError — custom deps ($urlFinder,
-  $categoryCollectionFactory, $scopeConfig) were BEFORE `array $data=[]`, breaking
-  positional instantiation on the configurable child-hydration path; moved them AFTER
-  core's $data/$config/$filterCustomAttribute (nullable + OM fallback).
-- **STILL TODO (OS-served read path, never exercised for configurables):**
-  configurable PDP renders 200 but layered swatch options + `jsonConfig`/`optionPrices`
-  are EMPTY when served from the shell (native path builds them fine). Also
-  `ProductRepository::get()` cache path hits null-SKU via the shell. Need: hydrate the
-  configurable jsonConfig/swatch/child-price data from the OS doc into ShellNoEavProduct
-  (or delegate correctly), fix shell getSku(), then scale fixtures to the real
-  ~19-color × ~77-size matrix and batch child-loading in the indexer (Phase B — current
-  getChildProducts() does a full ->load() per child = N+1 death for 600-child bras).
+Other open items: grouped/bundle add-to-cart hardening, per-store serving (docs project the default
+store view), multi-select facet labels (needs an indexed option dictionary), zero-downtime alias
+reindex.
 
-## Test bed in place
-19 filterable attributes (all input types), 11 attribute sets with distinct
-compositions, values on all 1383 products, indexed at product level (OS doc) and
-native `catalog_product_index_eav`. Setup scripts: `docs/tools/create-fitment-attrs.php`,
-`create-alltype-attrs.php`, `assign-fitment-values.php`, `assign-alltype-values.php`,
-`create-attribute-sets.php`, `create-attribute-sets-2.php`.
-
-## NEXT — in priority order
-1. ✅ **DONE — Multiselect → native EAV facet index.** Root cause: the test-bed
-   attrs were created with `backend_type='varchar'`; Magento's core EAV Source
-   indexer only indexes multiselect where `backend_type='text'` (reads
-   `catalog_product_entity_text`), so they yielded 0 rows in
-   `catalog_product_index_eav`. Fixed: flipped both attrs to `text`, migrated values
-   varchar→text (`docs/tools/fix-multiselect-backend-type.sql`), corrected
-   `create-alltype-attrs.php`. compatible_platforms=5444 rows/1368 products/6 opts,
-   included_formats=5436/1368/5. Both facets now render + filter on category AND
-   search layered nav (verified counts category-scoped: 100→30 for Jeep).
-2. **Downloadable proper hydration** (95% of catalog): index links/samples, hydrate
-   native downloadable blocks, remove the interim block-removal in catalog_product_view.xml.
-3. **All product types + test products**: no configurable/grouped/bundle exist —
-   create samples (configurable needs a super-attribute like `size`) and support each.
-4. **Category from OpenSearch (Phase 2L)** — LARGELY DONE. Category landing page now
-   fires **0 category/EAV SQL** (fully served); search page **342 → 118**.
-   - ✅ `CategoryIndexer` (`fastmagento_category`) → `magento2_categories` (218 docs:
-     tree structure, menu flags, url paths, all_children). mview subs on
-     catalog_category_entity*. `CategoryDataProvider` loads the whole tree from OS once
-     per request (by-id / children / request_path), native fallback if OS down.
-   - ✅ `CategoryUrlFinderPlugin` — batches category url_rewrite N+1 (112→5).
-   - ✅ `CategoryAttributeLoadPlugin` — serves category collection attribute values
-     (name/url_key/is_active/include_in_menu/is_anchor/all_children) from OS, skipping
-     the catalog_category_entity_* UNION loads. Covers mega-menu, top-nav, breadcrumb
-     parents, layered-nav children. Render diffs verified IDENTICAL plugin on/off.
-   - **DEFERRED (deliberate):** the residual search-page category SQL is ~5 native
-     collection *main* queries (filter joins — cheap indexed lookups, cold-cache only for
-     the FPC-cached menu) + one single-category `CategoryRepository::get()`/`Category::load`
-     from the layered-nav DataProvider. Serving that last model-load from OS needs a
-     COMPLETE category doc (all attrs, dynamic) + a Category shell/aroundLoad mirroring the
-     product path — high risk to category-page render (display_mode/custom layout) for
-     ~1-3 cold-cache queries, since the category page is already fully served. Revisit only
-     if a full category-object serve is wanted for other reasons.
-5. **Instant-search UX / write-path sync + delete** — ✅ DONE.
-   - ✅ Instant search + autocomplete (Algolia-style): `Model/Search/InstantSearch`
-     (native fulltext index for relevance/facets → hydrate display from magento2_products),
-     `/fastmagento/search/suggest` + `/fastmagento/search/instant`, Luma RequireJS JS
-     (autocomplete.js dropdown + instant-search.js live grid/facets/pagination). Verified
-     in-browser.
-   - ✅ Configurable add-to-cart (getProductByAttributes override matching OS children).
-   - ✅ Real-time stock sync (order/creditmemo observers + MSI SourceItemsSave/Delete
-     plugins) + product-delete removal from the index.
-   - **Still open:** zero-downtime alias reindex, reconciliation job, a full admin config
-     panel (only `fastmagento/search/facet_attributes` wired so far), grouped/bundle
-     add-to-cart, and general hardening.
-
-## IMPORTANT — index completeness
-The product index MUST be fully reindexed (`bin/magento indexer:reset fastmagento_product`
-then `indexer:reindex fastmagento_product`) — a stale indexer lock had left it at 4,402 of
-14,604 docs, which made search hydration drop most hits. Full index = 14,604 docs.
-
-## Configurable read-path — SWATCHES RENDER (item 3, Stage 1-2 DONE)
-Configurable PDP (`/keira-banded-underwire-bra-1.html`, id 4369) now renders the full
-swatch UI from OpenSearch: jsonConfig (color 15 opts / size 44 opts / 660 optionPrices)
-+ jsonSwatchConfig + client-side swatch-renderer, box-tocart, **16 total SQL (0 product/
-EAV)**. Fixes (all committed):
-- `ShellProductBuilder::hydrateChildFromCustomAttributes()` — child shells map
-  custom_attributes (raw color/size option ids), status label→numeric, type_id, top-level
-  stock→salable, so getAllowProducts() sees enabled children with option values.
-- Composite parent salability derived from children (salable if any child in stock);
-  shadowing salable/is_in_stock keys stripped from the OS doc.
-- `ShellNoEavProduct::isSalable()` honours the OS 'salable' flag (was reading
-  doc['is_in_stock'] = false for composite parents); `Configurable::isSalable()` override
-  trusts the flag instead of getLinkedProductCollection() (product SQL / 0 for a shell).
-- **Data/ops:** had to rebuild cataloginventory_stock + catalog_product_price (14k
-  backlog) so MSI reports children salable (getUsedProducts' MSI after-plugin filters by
-  real stock). New configurable/grouped/bundle test products need these indexes current.
-- Test tool: `docs/tools/create-downloadable-test.php` (downloadable); configurable test
-  bed = HER-* bras (id 4369+).
-✅ Out-of-stock child greying CONFIRMED (user-verified on PDP): an OOS child is dropped
-from getAllowProducts (659/660) but all 15 colors / 44 sizes still render; the swatch
-renderer greys the specific unavailable combo (show_out_of_stock=0 default).
-
-STILL TODO (Stage 3): **configurable add-to-cart via the shell fails** — addProduct returns
-"You need to choose options" because `Configurable::getProductByAttributes([93=>86,189=>89])`
-returns NULL for the shell (its getUsedProductCollection returns all 660, but the
-attribute-id→child match yields nothing). Native super_attribute matching path needs an
-override/fix for the OS-hydrated shell (mirror the getUsedProducts registry approach, or
-override getProductByAttributes to match against the OS child docs). Until then configurables
-can't be ordered. Simple/virtual/downloadable add + order fine. Also: grouped/bundle add,
-price/image switching visual check.
-
-## Search → variant swatch pre-selection — DONE (see docs/SWATCH-PRESELECT-PLAN.md)
-Searching a specific child ("keira black 34ddd") returns the configurable parent with the
-matching swatches pre-selected on the PDP. All in `Model/Search/InstantSearch.php`, **no
-reindex, no PDP JS**:
-- `deriveVariants()` flattens the parent's existing `child_products[]` + `swatch_options` +
-  `configurable_options_<id>` into matchable variants at query time (reads a precomputed
-  `source['variants']` if a future indexer adds one — none today).
-- `matchSelectedOptions()` pins a super-attribute only when exactly ONE of its option labels is
-  fully present in the query (partial match OK: colour-only or size-only).
-- `applySynonyms()` widens query tokens via the admin thesaurus (`fastmagento/search/synonyms`)
-  before matching, so a synonym pins a differently-named swatch (e.g. "burgundy"→Merlot color 104,
-  "lavender"→Purple). config.xml ships colour-family default groups. "Exactly one" rule keeps it
-  safe (a word that widens onto two option labels no-ops). Possible future upgrade: nearest-hex
-  matching for visual colour swatches (hex is in `swatch_options[...].value`) — deferred.
-- `productUrl()` appends `?color=<optId>&size=<optId>` (attribute **code** => option **id**);
-  `formatProduct()` swaps in the matched child's image + returns `selected_options`.
-- PDP pre-selects for free: native `swatch-renderer.js` `_init` runs
-  `_EmulateSelected($.parseQuery())` (reads `location.search`, keyed by attribute code).
-- Verified via `/fastmagento/search/instant?q=` and in-browser on id 4369. OOS combos stay
-  unselected (renderer greys them). Only wired on the instant/autocomplete path (classic
-  server-rendered results page is a follow-up).
-- Note: pre-existing OS-doc↔jsonConfig stock mismatch (child 3709 Black/34DD) surfaced during
-  testing — that's the stock-reindex staleness below, not this feature.
-
-## AI thesaurus generator + synonym defaults — DONE
-Admin can auto-build the search thesaurus from the store's OWN catalogue instead of hand-curating.
-- Admin config group `fastmagento/ai/*` (system.xml): encrypted `claude_api_key` (obscure +
-  Encrypted backend), `claude_model` (default claude-opus-4-8), `max_terms`, and a
-  "Generate thesaurus from catalogue" button.
-- `Model/Ai/AiConfig` (reads/decrypts key), `Model/Ai/AnthropicClient` (raw HTTPS POST to
-  api.anthropic.com/v1/messages via Magento CurlFactory — NO composer dep, structured outputs),
-  `Model/Ai/ThesaurusGenerator` (collects vocab: 17 select/multiselect attribute option labels +
-  218 category names via SQL → prompts model → merges groups into `fastmagento/search/synonyms`
-  without clobbering existing lines → reinit config).
-- `Controller/Adminhtml/Ai/GenerateThesaurus` (ACL `ParkkTech_FastMagento::config`, form-key POST),
-  `Block/.../GenerateThesaurusButton`, `etc/adminhtml/routes.xml` (admin route `fastmagento`).
-- config.xml synonyms expanded with colour-family + size (xs..xxxl, spelled/abbrev) + material +
-  apparel default groups. Verified live: "beige"→Sand(99), "burgundy"/"wine"→Merlot(104).
-- Generator not runnable without a real API key (admin-entered); vocab SQL + wiring verified,
-  di:compile GREEN.
-- ⚠️ NOTE vs CLAUDE.md "no AI/Claude mentions" hard rule: this feature is a user-requested product
-  integration that must name the Anthropic API + is labelled "Claude API Key" per request. Rename
-  identifiers/labels provider-neutrally before any subtree push if the shared repo enforces that rule.
-
-## Real-time stock sync — DONE
-`Model/OpenSearch/StockSyncer` + observers (sales_order_place_after,
-sales_order_creditmemo_save_after) + plugins (SourceItemsSave/DeleteInterface) reproject
-affected products + their configurable/grouped/bundle parents into OpenSearch immediately,
-so qty / in-stock stay live on orders, returns and inventory-API writes (admin grid,
-imports, ERP, bin/magento inventory:*). Verified: inventory-API qty change hits the OS doc
-with no manual reindex; a child sync reprojects its parent's child_products stock. The
-stock WRITE path itself is native Magento (StockManagement) — the sync just keeps OS current.
-
-## Configurable read-path — original DIAGNOSIS (resolved above)
-Configurable PDP (e.g. `/keira-banded-underwire-bra-1.html`, id 4369) renders 200 but shows
-**"unavailable"** — no swatches, no jsonConfig/spConfig, no price. The OS doc is COMPLETE:
-`configurable_options_4369` (2 super-attrs), `swatch_options` (attr 93/189),
-`child_products` (660 children with price/stock/images). The gap is the READ path:
-- `ProductIndexer::getChildProducts()` emits each child as {entity_id, sku, price,
-  final_price, special_price, is_in_stock, stock_qty, image(s), custom_attributes, store_*}.
-  The super-attribute values (`color=86`, `size=89`), `type_id=simple`, `status="Enabled"`
-  (LABEL not 1), `visibility` all live INSIDE `custom_attributes`.
-- `ShellProductBuilder::buildNoEavProductFromOsDoc()` (used recursively per child) reads
-  `status`/`type_id`/`visibility` TOP-LEVEL, stock from `extension_attributes.stock_item`,
-  and attrs from an `attributes` key — NONE of which match the child shape. So child shells
-  get no type_id, status not enabled, stock not wired → not salable, and their color/size
-  option values are never set as product data.
-- Result: `Configurable::getUsedProducts()` (reads registry `child_products`) returns shells
-  that `getAllowProducts()` filters out as non-salable → block renders nothing → "unavailable".
-**To finish:** (a) hydrate child shells correctly — map `custom_attributes` (incl super-attr
-option ids), resolve status label→1, wire top-level is_in_stock/stock_qty to salable, set
-type_id=simple; (b) verify `Swatches\Block\...\Configurable::getJsonConfig()` builds spConfig
-(optionPrices per child, swatch data from `swatch_options`, image switching); (c) fix shell
-`getSku()` null-SKU on the ProductRepository cache path; (d) add-to-cart with selected options;
-(e) confirm 0 product SQL. Biggest + most intricate of the remaining items.
-
-## Known interim shortcuts to revisit
-- Category listing served natively (broken PLP block override disabled).
-- ProductRepository get()/getList() fall back to native (not OS-served yet).
-- Product URL built from url_key+suffix (robust = index real request_path per store).
-- Reindex drops the index (no zero-downtime alias yet) → transient PDP 500s during reindex.
+## Related docs
+- `docs/ARCHITECTURE.md` — how it works (canonical).
+- `docs/OPENSEARCH-SERVING-LAYER-PLAN.md` — original roadmap (historical; status in ARCHITECTURE §9).
+- `docs/CART-RESUME.md` — Fast Checkout deep dive + supervised-order test notes.
+- `docs/SEARCH-KEYWORDS-SPEC.md` — search relevance/keywords spec (implemented).
+- `docs/SWATCH-PRESELECT-PLAN.md`, `docs/QA-OS-COVERAGE.md`, `docs/BLOCKERS.md` — feature/QA notes.

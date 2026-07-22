@@ -1,5 +1,8 @@
 # FastMagento — Autonomous session blockers & decisions
 
+> **Historical log.** The build is largely delivered; for the accurate current architecture and
+> status see **`docs/ARCHITECTURE.md`** and **`docs/RESUME.md`**. Kept for the decision trail below.
+
 Running the OpenSearch-serving-layer plan autonomously (cheap models, no supervision).
 This logs decisions I made without you and questions only YOU can answer. Nothing here
 stops the build unless marked **NEEDS YOU**.

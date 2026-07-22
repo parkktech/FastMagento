@@ -1,5 +1,11 @@
 # FastMagento — AI Search Keywords + Search-Algorithm Controls — BUILD SPEC
 
+> **STATUS: IMPLEMENTED (2026-07).** All three deliverables shipped, plus expert relevance work
+> (phrase/all-terms boosting, symmetric synonyms, operator toggle, content-aware AI thesaurus,
+> bundled starter thesaurus). See `docs/ARCHITECTURE.md` §7 for the as-built design and
+> `docs/tools/search-relevance.php` for the golden-query harness. This document is retained as the
+> original design rationale.
+
 Handoff spec for the next session. Goal: make FastMagento search behave more like Algolia /
 Sphinx (Mirasvit Search Ultimate). Reference doc the user provided:
 **https://mirasvit.com/docs/module-search-ultimate/1.1.7**

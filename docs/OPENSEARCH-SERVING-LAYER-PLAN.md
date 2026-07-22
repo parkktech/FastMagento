@@ -1,5 +1,12 @@
 # FastMagento — OpenSearch Serving-Layer Plan
 
+> **STATUS (2026-07): mostly delivered — historical roadmap.** Product/PDP/cart/search serving,
+> pricing, stock sync, category *data* serving, Fast Checkout, and the full search/relevance/AI
+> layer are built. The main outstanding phase is **server-side OS-serving of the category/PLP
+> product grid** (membership + layered-nav facets), which is next. For the accurate as-built
+> architecture and current status see **`docs/ARCHITECTURE.md`** (§9 lists what's done vs. next);
+> `docs/RESUME.md` is the current-state entry point. This plan is retained for design rationale.
+
 > Scoped roadmap to finish `ParkkTech_FastMagento`: make OpenSearch the sole
 > read/serving layer for products, categories, search and layered navigation,
 > while MySQL stays the source of truth and is kept in sync on every write.
