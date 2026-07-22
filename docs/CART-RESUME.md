@@ -291,6 +291,29 @@ while all children were in stock (Keira's happened to be fresh `1`).
   `AddProductPlugin::getSelectedChildProduct` matches `attribute_<id>` instead of the attribute
   code (only mis-applies the child catalog-rule price, not persistence).
 
+### LIVE end-to-end test — Playwright + real order (2026-07-21)
+First real browser checkout through the OS path (after a full fresh reindex — the index had
+been 100% stale on catalog_rule_prices; reindexed all 14,604 docs). Check/Money Order + Flat
+Rate enabled for offline testing.
+- **Order #100006120 placed successfully** via OS+optimistic, guest, Check/Money Order. Totals
+  correct: subtotal 216.90 / shipping 15.00 / grand 231.90. Guest catalog-rule pricing applied
+  (simple 200-JEH-051 sold at 112.50, not base 125.00). Mixed cart with 2 configurables →
+  handled (composite lines fall back to native), order still correct.
+- **No oversell confirmed:** placement created MSI reservations (−1 per line); salable qty
+  decremented exactly; cancelling the order reverted them. The placement gate works with
+  optimistic on.
+- **Perf (real HTTP `/rest/.../totals` call, guest, warm, loopback DB):**
+  - Clean physical cart (2 simple, no configurables — OS actually engages): native median
+    354ms / p90 379ms → OS+optimistic median **333ms (-6%)** / p90 **344ms (-9%)**, grand_total
+    identical (136.73). Min dipped to 196ms on OS.
+  - The ~340ms is dominated by Magento/webapi framework overhead (bootstrap, auth, serialize)
+    the quote-load doesn't touch; the query cut converts to more ms on prod DB latency. FPC/
+    Varnish don't cache checkout, so every checkout REST call pays full framework cost — the
+    broader "instant checkout" win is infra (keep-alive/opcache/DB proximity), not just this.
+- Left enabled for the owner: Check/Money Order + Flat Rate. Flags returned to OFF.
+- STILL TODO in the supervised test (docs/SUPERVISED-ORDER-TEST.md): logged-in Wholesale order,
+  and the deliberate over-qty simple line (confirm placement rejection, stock never negative).
+
 ## Notes / gotchas
 - Commit atomically; measure cold before/after; keep the README benchmark table current.
 - `catalogrule_product_price` stays flat (~175k rows) regardless of rule count (always-active
