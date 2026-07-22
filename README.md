@@ -44,6 +44,32 @@ overhead left is Magento bootstrapping itself.
 **🔗 See it in action:** [www.diyoffroad.com](https://www.diyoffroad.com/) — a live storefront
 running this serving layer.
 
+## 🎬 See the magic (live demos)
+
+> Watch it happen — no page reloads, no spinners, on a catalog this size. *(GIFs recorded from the
+> live storefront; drop-in replacements at the paths below.)*
+
+<table>
+<tr>
+<td width="33%" align="center">
+  <img src="docs/img/demo-autocomplete.gif" alt="As-you-type autocomplete search from OpenSearch" width="100%"/>
+  <br/><strong>⌨️ Autocomplete</strong><br/><sub>Products + categories appear as you type, in milliseconds.</sub>
+</td>
+<td width="33%" align="center">
+  <img src="docs/img/demo-instant-serp.gif" alt="Instant search results page updating live with no reload" width="100%"/>
+  <br/><strong>⚡ Instant SERP</strong><br/><sub>The whole results grid re-renders live — zero page reloads.</sub>
+</td>
+<td width="33%" align="center">
+  <img src="docs/img/demo-shop-by.gif" alt="Shop By layered navigation updating in real time" width="100%"/>
+  <br/><strong>🎛️ Live "Shop By"</strong><br/><sub>Tick a filter → grid, counts &amp; facets update instantly.</sub>
+</td>
+</tr>
+</table>
+
+<sub>💡 GIF paths: <code>docs/img/demo-autocomplete.gif</code>, <code>docs/img/demo-instant-serp.gif</code>,
+<code>docs/img/demo-shop-by.gif</code>. For crisper, smaller files GitHub also autoplays looping
+muted <code>&lt;video&gt;</code> (MP4/WebM) — swap the <code>&lt;img&gt;</code> tags if preferred.</sub>
+
 ## Problems it solves (problem → solution)
 
 Every one of these is a real Magento 2 pain on a large catalog — and a standalone reason to install:
