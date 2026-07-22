@@ -84,6 +84,24 @@ Catalog price rules are resolved **per customer group** (guest, Wholesale, Retai
 PDP, PLP, cart and checkout, served from a per-group map in the index rather than a per-child
 SQL lookup.
 
+### Fast Checkout — configurable-cart render time
+
+The cart/checkout **HTML render** cost is dominated by hydrating each configurable line item
+(parent + used-products + per-source MSI salability), so native checkout time grows with the
+number of configurable line items. **Fast Checkout** (`Enable Fast Checkout`, off by default)
+serves those line products from the index and flattens it. Warm render, this storefront:
+
+| Cart | Native | Fast Checkout | 
+|---|---:|---:|
+| 1 simple | 0.93 s | 0.41 s |
+| 1 configurable | 1.08 s | 0.42 s |
+| **10 configurable variants** | **3.34 s** | **0.41 s** |
+
+Native adds **~230 ms of render per configurable line**; Fast Checkout is **flat** regardless of
+configurable count (≈0.4 s), an **8× cut** on a 10-configurable cart. Order placement still
+re-checks salable quantity by SKU (MSI reservations), so it cannot oversell; any product
+missing/partial in the index falls back to the native path automatically.
+
 ---
 
 ## Features
@@ -103,12 +121,26 @@ SQL lookup.
     from OpenSearch; the PDP renders the full swatch UI. Out-of-stock option combinations
     still render (greyed), matching Magento's default behaviour.
 - **Instant search + autocomplete** — an as-you-type header dropdown (product cards +
-  category suggestions) and a search results page whose facets, product grid and pagination
-  re-render live from OpenSearch with no page reload (Algolia-style). Endpoints:
+  category suggestions) and a search results page whose **attribute facets**, product grid
+  and pagination re-render live from OpenSearch with no page reload (Algolia-style). Facets
+  (category + configured attributes, e.g. Part Type / Color / Link Style) and their option
+  **labels are resolved entirely from the index** — no DB/EAV lookup on the request path.
+  Configure via `FastMagento > Search > Facet Attributes`. Endpoints:
   `/fastmagento/search/suggest` and `/fastmagento/search/instant`.
+- **Fast Checkout** (opt-in, off by default) — serves cart/checkout line products, including
+  configurable variants, from the index instead of the native ~217-query product collection,
+  and skips the redundant per-load stock revalidation. Removes the multi-second cost of
+  configurable line items at checkout (see Benchmarks). One admin toggle,
+  `FastMagento > Fast Checkout > Enable Fast Checkout`; order placement still gates stock by
+  SKU so it cannot oversell, and anything not fully in the index falls back to native.
 - **Real-time stock sync** — order placement, refunds/returns and MSI inventory-API writes
   reproject the affected products (and their configurable/grouped/bundle parents) into the
-  index immediately, so quantity and in-stock status stay live.
+  index immediately, so quantity and in-stock status stay live. An optional **fast stock
+  sync** patches only the stock fields of the affected docs (instead of a full reprojection)
+  for much lower cost on large configurables.
+- **Always-ready index** — catalog-rule recalculations (rule save / nightly apply-all) patch
+  the affected docs' per-group rule prices into the index automatically, so the OS-served
+  cart is correct without a manual reindex.
 - **Read-path resilience** — *warm-on-miss* (a product missing from the index is added on
   first access, self-healing like a cache miss) and automatic native fallback whenever
   OpenSearch is unavailable.
@@ -235,6 +267,14 @@ curl -s "http://localhost:9200/magento2_products/_mapping?pretty"
 - Grouped and bundle read paths are indexed but not yet fully exercised for add-to-cart.
 - The serving index projects the **default store view**; per-store serving is tracked
   separately for multi-store setups.
+- **Search facets** cover **single-select** attributes today; multi-select attributes
+  (e.g. Compatible Platforms) are deferred — the native fulltext index sorts a doc's option-id
+  and option-label arrays independently, so an id can't be mapped to its label from OpenSearch
+  alone. A per-attribute option dictionary in the index would close this.
+- **Fast Checkout** is opt-in and should be validated with a real order (guest + a logged-in
+  group, plus a deliberately over-qty line) before enabling in production; it also assumes a
+  fresh price/rule projection (the always-ready rule sync keeps it current after the first
+  reindex).
 
 ---
 
