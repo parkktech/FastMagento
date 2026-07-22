@@ -53,7 +53,11 @@ other third-party modules running on every page.
 | PDP · Configurable | 0.68 s | 0.75 s |
 | PLP · Category | 0.45 s | 0.44 s |
 | Search results | 0.73 s | 0.66 s |
-| Cart / Checkout | 1.16 s | 1.15 s |
+| Cart / Checkout † | 1.16 s | 1.15 s |
+
+> † This row is the base serving layer with **Fast Checkout off**. Cart/checkout wall-clock is
+> dominated by configurable line-item hydration, which the opt-in **Fast Checkout** feature
+> removes — up to **8×** on configurable carts (see the **Fast Checkout** table below).
 
 > **How to read this.** The **query-count reduction is the scale-invariant metric**; the
 > wall-clock column is close *only because this is local dev*, where MySQL answers each query in
