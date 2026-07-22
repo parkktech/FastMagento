@@ -412,6 +412,16 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
     private function prepareDoc(\Magento\Catalog\Model\Product $product): array
     {
         $productData = $product->getData();
+        // Drop the product type's RUNTIME object caches (`_cache_instance_configurable_attributes`,
+        // `_cache_instance_used_product_attributes`, …). getData() carries them once the type
+        // instance has run, and serializing them into the index bloats the doc AND, served back on
+        // an OS shell, makes core treat stale JSON arrays as attribute objects (cart-page 500 on
+        // getUsedProductAttributes → getId()). They are always rebuilt at runtime; never index them.
+        foreach (array_keys($productData) as $dataKey) {
+            if (strncmp((string) $dataKey, '_cache_instance', 15) === 0) {
+                unset($productData[$dataKey]);
+            }
+        }
         $productData['created_at'] = $this->formatDateForOpenSearch($product->getCreatedAt());
         $productData['updated_at'] = $this->formatDateForOpenSearch($product->getUpdatedAt());
         $productData['category_names'] = $this->getCategoryNames($product);

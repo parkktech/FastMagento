@@ -470,6 +470,12 @@ class ShellProductBuilder
         $priceInfo = new ShellPriceInfo($this->shellPriceFactory, $regular, $final, $special, $catalogRulePrice);
         $product->setPriceInfo($priceInfo);
 
+        // Final guard: drop the product type's RUNTIME object caches that a build step (or a
+        // stale indexed doc) may have left as arrays in the model data. Served back they make
+        // core treat arrays as attribute objects → the cart page 500s in getUsedProductAttributes
+        // → getId(). Core rebuilds them live from the OS-hydrated data when next needed.
+        $product->stripRuntimeCaches();
+
         return $product;
     }
 

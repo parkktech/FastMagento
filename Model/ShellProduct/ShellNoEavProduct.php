@@ -118,12 +118,43 @@ class ShellNoEavProduct extends CoreProduct
 
     public function setOsDoc(array $doc): void
     {
+        // Keep the product type's RUNTIME object caches (_cache_instance_*) out of the doc — they
+        // get accidentally serialized into the index and, served back, are stale JSON arrays that
+        // make core treat arrays as attribute objects (cart 500 in getUsedProductAttributes →
+        // getId()). {@see stripRuntimeCaches} clears them from the model data at build end too.
+        foreach (array_keys($doc) as $key) {
+            if (strncmp((string) $key, '_cache_instance', 15) === 0) {
+                unset($doc[$key]);
+            }
+        }
         $this->doc = $doc;
+    }
+
+    /**
+     * Drop the product type's runtime object caches from the model data so core rebuilds them
+     * live. Called at the end of the shell build, after any step that may have re-populated them.
+     */
+    public function stripRuntimeCaches(): void
+    {
+        foreach (array_keys($this->_data) as $key) {
+            if (strncmp((string) $key, '_cache_instance', 15) === 0) {
+                unset($this->_data[$key]);
+            }
+        }
     }
 
     public function getData($key = '', $index = null)
     {
-        return $key !== '' && isset($this->doc[$key]) && null == $index ? $this->doc[$key] : parent::getData($key, $index);
+        // Never serve `_cache_instance_*` from the indexed doc. These are the product type's
+        // RUNTIME object caches (configurable attributes, used products, etc.) that get
+        // accidentally serialized into the index during projection; served back as stale JSON
+        // arrays they make core treat arrays as objects — e.g. getUsedProductAttributes()
+        // returns arrays and the cart page 500s on getId(). Fall through to the live object
+        // cache (set by ShellProductBuilder / rebuilt by core) instead.
+        if ($key !== '' && $index === null && isset($this->doc[$key]) && strncmp($key, '_cache_instance', 15) !== 0) {
+            return $this->doc[$key];
+        }
+        return parent::getData($key, $index);
     }
 
     /**
