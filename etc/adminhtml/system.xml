@@ -134,6 +134,12 @@
                     <comment><![CDATA[Serve cart/checkout stock from the live-indexed OpenSearch data and skip the redundant per-load MySQL stock preload. Order placement still re-checks salable quantity by SKU (MSI reservations) and rejects a truly out-of-stock order, so this cannot oversell. Trade-off: if the index is briefly stale, a shopper may reach the final placement step before being told an item is unavailable. Requires "Serve Quote Items" on. <strong>Validate with a real order first.</strong>]]></comment>
                 </field>
 
+                <field id="fast_stock_sync" translate="label comment" type="select" sortOrder="25" showInDefault="1" showInWebsite="1" showInStore="1">
+                    <label>Fast Stock Sync (patch index instead of full reproject)</label>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <comment><![CDATA[When an order, refund or inventory save changes stock, patch only the stock fields of the affected OpenSearch documents (in-stock flag, quantity, and composite child stock) instead of reprojecting the whole product from the database. Much cheaper for large configurables. Runs after the response is sent, so it never adds shopper latency. Automatically falls back to a full reprojection for any product not fully present in the index, so the index can't be left stale. <strong>Reindex once and verify parity before enabling in production.</strong>]]></comment>
+                </field>
+
                 <field id="configurable_line_name" translate="label comment" type="select" sortOrder="30" showInDefault="1" showInWebsite="1" showInStore="1">
                     <label>Configurable Line-Item Name</label>
                     <source_model>ParkkTech\FastMagento\Model\Config\Source\ConfigurableLineName</source_model>

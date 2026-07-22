@@ -57,6 +57,12 @@ xxxl, 3xl, triple xl</synonyms>
                      preload and rely on the placement-time CheckItemsQuantity gate. Requires
                      os_serve_quote_items on. Changes checkout stock behaviour; opt-in only. -->
                 <optimistic_stock>0</optimistic_stock>
+                <!-- Default OFF: fast stock sync — when an order/refund/inventory save mutates
+                     stock, patch just the stock fields of the affected OpenSearch docs (mget →
+                     patch is_in_stock/qty + composite child stock → bulk re-index) instead of a
+                     full EAV product reprojection. Falls back to a full reproject for any doc
+                     missing/partial in the index. Background (post-response) work; opt-in. -->
+                <fast_stock_sync>0</fast_stock_sync>
                 <!-- Line-item name for configurable products on cart/mini-cart/checkout:
                      parent = the configurable name (Magento default), child = the purchased
                      simple's name. Default parent = no change. -->

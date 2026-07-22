@@ -104,11 +104,216 @@ class StockSyncer
 
         if ($reindexIds) {
             try {
-                $this->productIndexer->executeList($reindexIds);
+                if ($this->openSearchConfig->isFastStockSyncEnabled()) {
+                    // Patch just the stock fields of each affected doc in place; only the ids
+                    // that can't be safely patched (missing/partial in the index, deleted child,
+                    // or any error) fall through to a full EAV reprojection below.
+                    $reindexIds = $this->patchStockDocs($reindexIds);
+                }
+                if ($reindexIds) {
+                    $this->productIndexer->executeList($reindexIds);
+                }
             } catch (\Throwable $e) {
                 $this->writeLog->writeErrorLog('[FastMagento] deferred stock sync failed: ' . $e->getMessage());
             }
         }
+    }
+
+    /**
+     * Patch only the stock fields of the given products' OpenSearch docs in place, instead of
+     * a full EAV reprojection. Enabled by the fast_stock_sync flag.
+     *
+     * Faithful to what a full reproject writes for stock: a product's top-level `is_in_stock`
+     * + `stock_data.qty` and `extension_attributes.stock_item.{is_in_stock,qty}` come from its
+     * own cataloginventory_stock_item (stock_id 1) row — the exact legacy source the indexer
+     * reads (ProductIndexer::prepareDoc) — and each composite parent's
+     * `child_products[].{is_in_stock,stock_qty}` from the children's rows (mirrors
+     * ProductIndexer::getStockMap). No prices, attributes or relations are touched, so nothing
+     * else can drift.
+     *
+     * Fail-safe: any doc missing/partial in the index, any product/listed child without a live
+     * stock row (e.g. a just-deleted child), a bulk failure, or any Throwable → that id (or the
+     * whole set on a hard failure) is RETURNED for a full reprojection, so the index is never
+     * left stale.
+     *
+     * @param int[] $ids
+     * @return int[] ids that must still be fully reprojected (misses + errors)
+     */
+    private function patchStockDocs(array $ids): array
+    {
+        try {
+            $client = $this->clientResolver->create($this->engineResolver->getCurrentSearchEngine());
+            $indexName = $this->openSearchConfig->getIndexName();
+
+            $response = $client->getOpenSearchClient()->mget([
+                'index' => $indexName,
+                'body' => ['ids' => array_map('strval', $ids)],
+            ]);
+
+            $sources = []; // id => _source (found + full)
+            $misses = [];  // id => id (reproject fully)
+            foreach (($response['docs'] ?? []) as $doc) {
+                $id = (int) ($doc['_id'] ?? 0);
+                if (!$id) {
+                    continue;
+                }
+                if (empty($doc['found']) || !isset($doc['_source']) || !is_array($doc['_source'])) {
+                    $misses[$id] = $id;
+                    continue;
+                }
+                $sources[$id] = $doc['_source'];
+            }
+            // Any requested id the mget didn't account for at all → reproject to be safe.
+            foreach ($ids as $id) {
+                if (!isset($sources[$id]) && !isset($misses[$id])) {
+                    $misses[$id] = $id;
+                }
+            }
+
+            if (!$sources) {
+                return array_values($misses);
+            }
+
+            // ONE live-stock read covering every product AND every referenced composite child.
+            $stockIds = array_keys($sources);
+            foreach ($sources as $src) {
+                foreach (($src['child_products'] ?? []) as $child) {
+                    $cid = (int) ($child['entity_id'] ?? 0);
+                    if ($cid) {
+                        $stockIds[] = $cid;
+                    }
+                }
+            }
+            $live = $this->getLiveStock(array_values(array_unique($stockIds)));
+
+            $docsToIndex = [];
+            foreach ($sources as $id => $src) {
+                $patched = $this->patchDocStock($id, $src, $live);
+                if ($patched === null) {
+                    $misses[$id] = $id;
+                    continue;
+                }
+                $docsToIndex[] = ['id' => (string) $id, 'body' => $patched];
+            }
+
+            if ($docsToIndex && !$this->bulkIndexStock($client, $indexName, $docsToIndex)) {
+                // Bulk write failed → reproject everything we tried to patch.
+                foreach ($docsToIndex as $doc) {
+                    $misses[(int) $doc['id']] = (int) $doc['id'];
+                }
+            }
+
+            return array_values($misses);
+        } catch (\Throwable $e) {
+            $this->writeLog->writeErrorLog('[FastMagento] fast stock patch failed; full reproject: ' . $e->getMessage());
+            return $ids;
+        }
+    }
+
+    /**
+     * Apply the live stock of one product to its doc _source. Returns the patched _source, or
+     * null if the doc is too partial to patch safely (→ caller reprojects it fully).
+     *
+     * @param array<string, mixed> $src
+     * @param array<int, array{qty:float,is_in_stock:int}> $live
+     * @return array<string, mixed>|null
+     */
+    private function patchDocStock(int $id, array $src, array $live): ?array
+    {
+        // Product's own live stock must be readable, and the doc must already carry a
+        // stock_item sub-doc (a shell without one isn't checkout-safe) → else reproject.
+        if (!isset($live[$id])
+            || empty($src['extension_attributes']['stock_item'])
+            || !is_array($src['extension_attributes']['stock_item'])
+        ) {
+            return null;
+        }
+        $qty = (float) $live[$id]['qty'];
+        $inStock = (int) $live[$id]['is_in_stock'];
+
+        // Mirror ProductIndexer::prepareDoc exactly: bool top-level flag, stock_data == {qty}.
+        $src['is_in_stock'] = (bool) $inStock;
+        $src['stock_data'] = ['qty' => $qty];
+        $src['extension_attributes']['stock_item']['qty'] = $qty;
+        $src['extension_attributes']['stock_item']['is_in_stock'] = $inStock;
+
+        // Composite parents carry child_products[] whose per-child is_in_stock/stock_qty a full
+        // reproject fills from the children's cataloginventory_stock_item rows. Patch them the
+        // same way. If the doc is composite but has no child_products, or a listed child has no
+        // live row (e.g. it was just deleted), we can't fully patch it → reproject.
+        $type = (string) ($src['type_id'] ?? '');
+        if (in_array($type, ['configurable', 'grouped', 'bundle'], true)) {
+            if (empty($src['child_products']) || !is_array($src['child_products'])) {
+                return null;
+            }
+            foreach ($src['child_products'] as &$child) {
+                $cid = (int) ($child['entity_id'] ?? 0);
+                if (!$cid || !isset($live[$cid])) {
+                    return null;
+                }
+                $child['is_in_stock'] = (bool) $live[$cid]['is_in_stock'];
+                $child['stock_qty'] = (float) $live[$cid]['qty'];
+            }
+            unset($child);
+        }
+
+        return $src;
+    }
+
+    /**
+     * Batch-read live stock (qty + is_in_stock) from the legacy single-source stock table —
+     * the same source ProductIndexer reads when it projects stock.
+     *
+     * @param int[] $ids
+     * @return array<int, array{qty:float,is_in_stock:int}>
+     */
+    private function getLiveStock(array $ids): array
+    {
+        $out = [];
+        if (!$ids) {
+            return $out;
+        }
+        $connection = $this->resource->getConnection();
+        $rows = $connection->fetchAll(
+            $connection->select()
+                ->from(
+                    $this->resource->getTableName('cataloginventory_stock_item'),
+                    ['product_id', 'qty', 'is_in_stock']
+                )
+                ->where('product_id IN (?)', $ids)
+                ->where('stock_id = ?', 1)
+        );
+        foreach ($rows as $row) {
+            $out[(int) $row['product_id']] = [
+                'qty' => (float) $row['qty'],
+                'is_in_stock' => (int) $row['is_in_stock'],
+            ];
+        }
+        return $out;
+    }
+
+    /**
+     * Bulk re-index the patched _source docs (NDJSON). Returns false on any item error so the
+     * caller can fall back to a full reprojection for those ids.
+     *
+     * @param array<int, array{id:string, body:array<string,mixed>}> $docs
+     */
+    private function bulkIndexStock($client, string $indexName, array $docs): bool
+    {
+        $lines = '';
+        foreach ($docs as $doc) {
+            $lines .= json_encode(['index' => ['_id' => $doc['id'], '_index' => $indexName]]) . "\n";
+            $lines .= json_encode($doc['body']) . "\n";
+        }
+        $lines .= "\n";
+        $response = $client->getOpenSearchClient()->bulk(['body' => $lines]);
+        if (!empty($response['errors'])) {
+            $this->writeLog->writeErrorLog(
+                '[FastMagento] fast stock patch bulk errors: ' . json_encode($response['items'] ?? [])
+            );
+            return false;
+        }
+        return true;
     }
 
     /**

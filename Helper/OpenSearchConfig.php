@@ -19,6 +19,16 @@ class OpenSearchConfig extends AbstractHelper
     }
 
     /**
+     * Fast stock sync: patch just the stock fields of affected OpenSearch docs on a stock
+     * change instead of a full EAV reprojection (falls back to a full reproject on any miss).
+     * Store-scoped flag, default off.
+     */
+    public function isFastStockSyncEnabled(): bool
+    {
+        return $this->scopeConfig->isSetFlag('fastmagento/cart/fast_stock_sync');
+    }
+
+    /**
      * ✅ Get OpenSearch Index Name from Configuration.
      */
     public function getIndexName(): string
