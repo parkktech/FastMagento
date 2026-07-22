@@ -82,6 +82,35 @@ cost. Fixed framework overhead is ~150–250ms (webapi routing/auth/serialize) �
 (per-collector warm-median breakdown) and `docs/tools/stock-patch-verify.php <id...>` (fast-stock
 parity harness).
 
+**⚠⚠ PRODUCTION-MODE MEASUREMENT DONE (2026-07-21) — the real bottleneck is the webapi framework
+floor, NOT dev-mode cold-start, NOT collectTotals, NOT the quote load.**
+Flipped THIS env to production mode (compiled DI + static deploy), measured the real warm HTTP
+`POST /rest/V1/guest-carts/{id}/totals-information` (guest cart, simple ×2, flat-rate + CA
+address, grand 591.85), median of 25, then restored developer mode. Bench harness:
+`scratchpad/totals-http-bench.sh` (session scratchpad — copy into docs/tools if wanted).
+- **totals-information warm: developer 332 ms → production 319 ms (only −4%).** The mode flip
+  barely moved it. So the earlier "the ~190 ms cold-start collapses in prod" hypothesis is FALSE
+  for the HTTP path — the dev-mode warm HTTP number was already at its steady-state floor.
+- **Trivial REST call with NO cart (`GET /rest/V1/directory/countries/US`) = ~250 ms** in
+  production mode. That is the **webapi framework floor** — per-request bootstrap + auth/ACL +
+  routing + serialize, paid before any checkout logic. Homepage ≈ 230 ms.
+- Therefore the **checkout-specific work is only ~70 ms** on top of the floor (319 − 250):
+  quote load + address save + shipping-rate collection + collectTotals (~11 ms) + serialize.
+- App is on native WSL2 ext4 (not a /mnt slow-mount). opcache is on but `validate_timestamps=1`,
+  **no `opcache.preload`**, 2 fpm workers, modest local hardware. A tuned prod host (opcache
+  preload, `validate_timestamps=0`, more/《warm》 fpm workers, DB/Redis proximity) typically has a
+  30–80 ms REST floor, not 250 ms.
+
+**BOTTOM LINE for the sub-100 ms goal:** it is gated by the **~250 ms per-request framework
+floor = infrastructure**, not by anything in the FastMagento layer. Stage 1 (quote-load flatten)
+and the totals path optimize the ~70 ms checkout slice, of which the quote load is a fraction —
+real, but a small share while a 250 ms infra floor dominates. **The next lever is operational, not
+code:** (a) `opcache.preload` a Magento preload list + `opcache.validate_timestamps=0` (needs the
+php-fpm ini + an fpm reload — I lack passwordless sudo, so the owner runs this); (b) FPM pool
+tuning / keep-alive; (c) DB/Redis proximity. Re-run `totals-http-bench.sh` after each to quantify.
+Do NOT invest further in a collectTotals code fast-path — it cannot touch the 250 ms floor and the
+warm checkout slice is already small.
+
 **How to resume / test:** enable both flags; harnesses in the session scratchpad
 (`quote-timing.php`, `quote-profile.php`, `collect-profile.php`, `breakdown.php`,
 `area-measure.php`) + `docs/tools/cart-verify.php` (totals/stock/flags) +
