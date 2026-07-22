@@ -70,6 +70,13 @@ running this serving layer.
 <code>docs/img/demo-shop-by.gif</code>. For crisper, smaller files GitHub also autoplays looping
 muted <code>&lt;video&gt;</code> (MP4/WebM) — swap the <code>&lt;img&gt;</code> tags if preferred.</sub>
 
+> ### 🎸 And here's the kicker
+> **All of this is pure *backend* performance — no Hyvä, no Swissup Breeze, no theme surgery
+> required.** FastMagento makes Magento *serve* data in milliseconds on the stock Luma frontend.
+> Now **pair it with a fast frontend theme** like Hyvä or Swissup Breeze, and you've got a genuine
+> **banger of a site** — lightning back end *and* front end. They optimize the paint; we obliterate
+> the data cost underneath it. 🤝
+
 ## Problems it solves (problem → solution)
 
 Every one of these is a real Magento 2 pain on a large catalog — and a standalone reason to install:
@@ -287,6 +294,9 @@ you came for:
 
 ## Feature: OpenSearch product serving (zero EAV reads)
 
+> **Zero.** That's how many product/EAV queries your PDP fires now. Not *fewer* — **zero**. Go
+> ahead, count them. We'll wait. 😏
+
 Every product read on the storefront — PDP, cart, related/up-sell, search hydration, product
 sliders — is answered by a `ShellNoEavProduct`: a real `Magento\Catalog\Model\Product` subclass
 whose `load()` is a no-op and whose getters return from the indexed `_source`. This removes the
@@ -297,6 +307,9 @@ values pre-resolved to **labels** in the index. Because it stays a real product 
 blocks, plugins and SEO modules keep working unchanged.
 
 ## Feature: Category & navigation serving
+
+> **Your mega-menu used to cost 100+ queries every single page load.** Now the entire category tree
+> arrives in *one* search and lives in memory. Breadcrumbs, nav, "Shop By" parents — all free.
 
 A dedicated `fastmagento_category` indexer (`magento2_categories`) projects the whole tree; a
 request-scoped provider pulls it in **one** search and answers the mega-menu, top navigation,
@@ -325,6 +338,9 @@ sliders quietly expensive on every page.
 
 ## Feature: Autocomplete search (as-you-type dropdown)
 
+> **Blink and you'll miss it.** The shopper starts typing — and the right products are already
+> sitting there, images, prices and all. Faster than they can finish the word.
+
 An **Algolia-style autocomplete dropdown** on the header search box: as the shopper types, a
 debounced AJAX call returns product cards (image, name, price, in-stock) **and** matching category
 suggestions, rendered instantly with keyboard navigation. Results come from OpenSearch — relevance
@@ -334,6 +350,9 @@ suggestions appear in milliseconds and every keystroke aborts the previous reque
 
 ## Feature: Instant search results page (live SERP, no reload)
 
+> **A search results page that never reloads. On Magento.** Read that again. We'll give you a
+> second.
+
 The search results page is a **fully live SERP**: the product grid and pagination re-render in
 place from OpenSearch with **no page reload** as the shopper types or pages, and the URL updates via
 `history.replaceState` (shareable, back-button friendly). It replaces Magento's native
@@ -341,6 +360,9 @@ server-rendered search results outright and returns hits in milliseconds. Endpoi
 `/fastmagento/search/instant`.
 
 ## Feature: Live layered navigation on search (instant "Shop By")
+
+> **Tick a filter. Watch the entire page rearrange itself. No reload.** Facet counts, grid,
+> pagination — all instant. Your customers will think you rebuilt the store in React.
 
 The **layered-navigation "Shop By" facets on the search page update live** — tick a filter and the
 grid, pagination and facet counts all re-render in place from OpenSearch aggregations, no page
@@ -370,6 +392,9 @@ anything not fully in the index falls back to native automatically.
 
 ## Feature: Real-time stock & price sync
 
+> **Sell it, refund it, restock it — the index already knows.** Updates land in OpenSearch *before
+> the response even finishes*, so your storefront is never stale and the shopper never waits.
+
 Order placement, refunds/returns and MSI inventory-API writes reproject the affected products (and
 their configurable/grouped/bundle parents) into the index immediately — **after
 `fastcgi_finish_request`, so the shopper never waits** — keeping quantity and in-stock status live
@@ -379,6 +404,10 @@ patch per-group rule prices into the docs automatically, so the OS-served cart i
 manual reindex**.
 
 ## Feature: Paginated attribute options — manage 50,000+ options without crashing
+
+> **The one screen that made Magento give up.** 50,000 color options used to *hang* the attribute
+> page. Now it opens instantly, you search by name or ID, and every edit saves a single row. The
+> impossible admin page — solved.
 
 **Keywords: Magento paginated attribute options, attribute option pagination, manage thousands of
 swatch options, 50k color attribute.** A well-known Magento 2 shortcoming: the product-attribute
@@ -408,6 +437,10 @@ cache-transparent.
 
 ## Feature: Faster admin on the same hardware
 
+> **But wait… there's more!** 📺 Move the storefront off MySQL and your **admin gets faster too** —
+> imports, indexers, order processing, all of it — on the *exact same hardware*. That's not an
+> add-on. That's a free bonus you didn't even ask for.
+
 A quiet but real win: because the **frontend no longer hammers MySQL** for product/EAV/price/stock
 reads (that work now lands on OpenSearch), the database and PHP-FPM pool spend far less time serving
 storefront traffic — so the **Magento admin, imports, indexers and integrations get noticeably
@@ -423,6 +456,10 @@ lookup**. This is what kills the classic per-child `catalogrule_product_price` +
 big configurable, and keeps B2B pricing fast at scale.
 
 ## Feature: Drop-in & third-party transparent (base Magento only)
+
+> **No core hacks. No ripped-out modules. And no Hyvä or Breeze required.** It's all backend —
+> pair it with a fast theme for a real banger, or run it on stock Luma and still fly. Turn any
+> piece off and it falls straight back to native. Your extensions never even notice.
 
 FastMagento runs on **base Magento** — no core patches. Because every read returns a **real
 `Magento\Catalog\Model\Product` / `Category` object** (just hydrated from OpenSearch instead of the
