@@ -220,7 +220,29 @@ one `mget`. `Model/Search/InstantSearch.php` is the query service.
 
 ---
 
-## 8. Config reference (paths)
+## 8. Admin: paginated attribute options
+
+Fixes Magento's whole-collection "Manage Options" grid (crashes at thousands of options). Files:
+- `Model/AttributeOption/OptionRepository.php` — direct-SQL reader/writer: `getPage()` (one bounded
+  SELECT + label search), `save()` / `delete()` touch only one option's rows
+  (`eav_attribute_option` incl. the 3rd-party `group_id`, per-store `eav_attribute_option_value`,
+  `eav_attribute_option_swatch`). Handles select / multiselect / visual+text swatch.
+- `Controller/Adminhtml/AttributeOption/{Grid,Save,Delete}` — AJAX endpoints (`fastmagento/attributeOption/*`,
+  ACL `Magento_Catalog::attributes_attributes`).
+- `Block/Adminhtml/AttributeOption/Manager` + `view/adminhtml/templates/attribute-option/manager.phtml`
+  + `view/adminhtml/web/js/attribute-option-manager.js` — the paginated grid UI (renders only for
+  enabled option-bearing attributes; swatch column only for swatch types).
+- `view/adminhtml/layout/catalog_product_attribute_edit.xml` — removes the native `main.advanced` /
+  `main.swatches_visual` / `main.swatches_text` blocks (so their whole-collection load never runs)
+  and injects the manager.
+- `Plugin/Adminhtml/AttributeSaveOptionGuardPlugin` (`etc/adminhtml/di.xml`) — strips the monolithic
+  option payload from the attribute Save request when pagination is on, so options are only ever
+  managed per-row via AJAX (belt-and-suspenders; the UI posts no option fields anyway).
+- Config: `fastmagento/attribute_pagination/enabled` (default 1), `page_size` (default 50).
+- Known limitation: SYSTEM attributes whose options come from a PHP source model (not
+  `eav_attribute_option`) show an empty grid (rare — not the target use case).
+
+## 9. Config reference (paths)
 
 `fastmagento/indexing/*` (index prefixes, realtime/cron indexing); `fastmagento/search/*`
 (searchable_attributes, typo_tolerance, boost_in_stock, custom_ranking_*, search_operator,
@@ -232,7 +254,7 @@ registered in `etc/di.xml`. Crons: `etc/crontab.xml` (reindex, cache warmup).
 
 ---
 
-## 9. Dormant code (do NOT mistake for live) & roadmap
+## 10. Dormant code (do NOT mistake for live) & roadmap
 
 **Not wired / disabled** — ignore when reasoning about live behaviour:
 - `Plugin/ShellProductPlugin` (`disabled="true"`, superseded by `FrontendProductPlugin`).
@@ -253,7 +275,7 @@ registered in `etc/di.xml`. Crons: `etc/crontab.xml` (reindex, cache warmup).
 
 ---
 
-## 10. Ops quick reference
+## 11. Ops quick reference
 
 Reindex: `bin/magento indexer:reindex fastmagento_product fastmagento_category`
 (+ `catalogsearch_fulltext` after AI keyword runs). Production mode needs a DI compile for new

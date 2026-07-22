@@ -1,0 +1,40 @@
+<?php
+/** @var \ParkkTech\FastMagento\Block\Adminhtml\AttributeOption\Manager $block */
+if (!$block->shouldRender()) {
+    return;
+}
+$configJson = $block->getConfigJson();
+?>
+<div class="fieldset-wrapper" id="fm-attribute-option-manager">
+    <div class="fieldset-wrapper-title">
+        <strong class="title"><span><?= $block->escapeHtml(__('Manage Options (paginated)')) ?></span></strong>
+    </div>
+    <div class="fieldset-wrapper-content">
+        <div class="fm-aom-toolbar">
+            <input type="text" class="fm-aom-search input-text admin__control-text"
+                   placeholder="<?= $block->escapeHtmlAttr(__('Search options…')) ?>"/>
+            <button type="button" class="fm-aom-add action-secondary"><?= $block->escapeHtml(__('Add Option')) ?></button>
+            <span class="fm-aom-status"></span>
+        </div>
+        <table class="data-grid fm-aom-table" style="width:100%;margin-top:8px;">
+            <thead><tr class="fm-aom-head"></tr></thead>
+            <tbody class="fm-aom-body"></tbody>
+        </table>
+        <div class="fm-aom-pager admin__data-grid-pager-wrap" style="margin-top:8px;"></div>
+    </div>
+</div>
+<script>
+    require(['ParkkTech_FastMagento/js/attribute-option-manager'], function (manager) {
+        manager(<?= /* @noEscape */ $configJson ?>, document.getElementById('fm-attribute-option-manager'));
+    });
+</script>
+<style>
+    #fm-attribute-option-manager .fm-aom-toolbar { display:flex; gap:8px; align-items:center; }
+    #fm-attribute-option-manager .fm-aom-search { max-width:280px; }
+    #fm-attribute-option-manager .fm-aom-table th,
+    #fm-attribute-option-manager .fm-aom-table td { padding:6px 8px; text-align:left; vertical-align:middle; }
+    #fm-attribute-option-manager .fm-aom-swatch { width:26px; height:26px; border:1px solid #ccc; border-radius:3px; display:inline-block; }
+    #fm-attribute-option-manager .fm-aom-status { color:#555; }
+    #fm-attribute-option-manager .fm-aom-pager button { margin-right:6px; }
+    #fm-attribute-option-manager .fm-aom-row-dirty { background:#fffbe6; }
+</style>

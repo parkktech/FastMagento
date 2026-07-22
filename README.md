@@ -195,6 +195,13 @@ native path automatically.
   first access, self-healing like a cache miss) and automatic native fallback whenever
   OpenSearch is unavailable.
 - **Cache/Varnish transparent** — serving happens beneath FPC and the layout cache.
+- **Paginated attribute options (admin, large-catalog fix)** — Magento's native "Manage Options"
+  screen loads and re-saves the **entire** option set on one page, so a color/size attribute with
+  thousands of options (a real lingerie/apparel catalogue can have 50k+ colour combinations) makes
+  the attribute-edit page hang or crash. FastMagento replaces it with a **paginated option manager**
+  that loads one page at a time and persists each add / edit / delete as a **single-row** operation —
+  so a 50,000-option attribute opens instantly and every change is O(1), not O(all options). Works
+  for dropdown, multiple-select, and visual/text swatch attributes. On by default.
 
 ---
 
@@ -295,6 +302,29 @@ not guessed:
 php app/code/ParkkTech/FastMagento/docs/tools/search-relevance.php            # golden-queries.json
 php app/code/ParkkTech/FastMagento/docs/tools/search-relevance.php "front end" "sxs"
 ```
+
+---
+
+## Admin: paginated attribute options (large-catalog fix)
+
+A well-known Magento 2 shortcoming: the product-attribute **Manage Options** grid (and the swatch
+variants) renders **every** option on the page and re-serialises the whole set on save. Past a few
+thousand options the attribute-edit page slows to a crawl or crashes outright — a hard blocker for
+large apparel/lingerie catalogues where a single colour attribute can carry **tens of thousands**
+of combinations (solids, two-colour patterns, prints).
+
+FastMagento replaces that screen with a **paginated option manager**:
+
+- **Loads one page at a time** (AJAX) — the edit page opens instantly even at 50,000 options,
+  instead of materialising the entire array into the DOM.
+- **Search** across option labels, server-side (bounded query).
+- **Single-row writes** — adding, editing or deleting an option is one AJAX call that touches only
+  that option's rows (`eav_attribute_option` + per-store value + swatch), never the whole set. A
+  guard plugin also stops the native "save the whole array" path from ever running, so a Save
+  Attribute click can't wipe or overwrite the option set.
+- **All option types** — dropdown, multiple-select, visual swatch (colour/image) and text swatch.
+
+On by default (`FastMagento > … attribute_pagination/enabled`); no configuration needed.
 
 ---
 

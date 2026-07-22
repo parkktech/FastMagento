@@ -12,4 +12,12 @@
 <!--    <preference for="Magento\Catalog\Model\ResourceModel\Product\Collection"
                 type="ParkkTech\FastMagento\Model\ResourceModel\Product\IndexerProductCollection"
     />-->
+
+    <!-- Safety net: when attribute pagination is on, prevent the native attribute Save from
+         processing the (unrendered) monolithic option payload, so it can never wipe the option
+         set. Options are managed per-row via the paginated manager's AJAX endpoints. -->
+    <type name="Magento\Catalog\Controller\Adminhtml\Product\Attribute\Save">
+        <plugin name="fastmagento_attribute_option_save_guard"
+                type="ParkkTech\FastMagento\Plugin\Adminhtml\AttributeSaveOptionGuardPlugin"/>
+    </type>
 </config>

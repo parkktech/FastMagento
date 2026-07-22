@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<!--
+    Replace Magento's native "Manage Options" / swatch grids (which load and re-save the ENTIRE
+    option set — unusable past a few thousand options) with FastMagento's paginated option
+    manager. The native blocks are removed so their whole-collection load never runs; the manager
+    fetches one page at a time and saves each row independently.
+-->
+<page xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/page_configuration.xsd">
+    <body>
+        <referenceBlock name="main.advanced" remove="true"/>
+        <referenceBlock name="main.swatches_visual" remove="true"/>
+        <referenceBlock name="main.swatches_text" remove="true"/>
+        <referenceContainer name="main">
+            <block class="ParkkTech\FastMagento\Block\Adminhtml\AttributeOption\Manager"
+                   name="fastmagento.attribute.options" as="advanced"/>
+        </referenceContainer>
+    </body>
+</page>

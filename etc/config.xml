@@ -90,6 +90,13 @@ xxxl, 3xl, triple xl</synonyms>
                 <claude_model>claude-opus-4-8</claude_model>
                 <max_terms>1200</max_terms>
             </ai>
+            <!-- Admin attribute-option pagination. Default ON: replaces Magento's native
+                 "Manage Options"/swatch grid (which loads and re-saves the WHOLE option set and
+                 crashes past a few thousand options) with a paginated, per-row-CRUD manager. -->
+            <attribute_pagination>
+                <enabled>1</enabled>
+                <page_size>50</page_size>
+            </attribute_pagination>
             <cart>
                 <!-- Master toggle. Default ON. Turning it on enables the WHOLE fast pipeline —
                      OS-serving the quote items, optimistic stock, AND fast stock sync — so Fast
