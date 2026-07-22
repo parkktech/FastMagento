@@ -126,6 +126,13 @@
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                     <comment><![CDATA[Hydrate cart/checkout line products from the OpenSearch index instead of the native ~217-query product collection. Hard native fallback for any product missing/partial in the index, custom-option carts, and bundle/grouped products, so it never half-serves a cart. Live stock is still loaded natively (no overselling). <strong>Test on a real order before enabling in production.</strong>]]></comment>
                 </field>
+
+                <field id="optimistic_stock" translate="label comment" type="select" sortOrder="20" showInDefault="1" showInWebsite="1" showInStore="1">
+                    <label>Optimistic Stock (skip redundant pre-placement checks)</label>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <depends><field id="os_serve_quote_items">1</field></depends>
+                    <comment><![CDATA[Serve cart/checkout stock from the live-indexed OpenSearch data and skip the redundant per-load MySQL stock preload. Order placement still re-checks salable quantity by SKU (MSI reservations) and rejects a truly out-of-stock order, so this cannot oversell. Trade-off: if the index is briefly stale, a shopper may reach the final placement step before being told an item is unavailable. Requires "Serve Quote Items" on. <strong>Validate with a real order first.</strong>]]></comment>
+                </field>
             </group>
 
             <!-- Cache Optimization -->

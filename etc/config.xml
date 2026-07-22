@@ -53,6 +53,10 @@ xxxl, 3xl, triple xl</synonyms>
                 <!-- Default OFF: OS-serving the quote-item collection is checkout code; every
                      commit stays inert until this is explicitly enabled in a store. -->
                 <os_serve_quote_items>0</os_serve_quote_items>
+                <!-- Default OFF: optimistic stock — skip the redundant per-load MSI stock
+                     preload and rely on the placement-time CheckItemsQuantity gate. Requires
+                     os_serve_quote_items on. Changes checkout stock behaviour; opt-in only. -->
+                <optimistic_stock>0</optimistic_stock>
             </cart>
         </fastmagento>
     </default>

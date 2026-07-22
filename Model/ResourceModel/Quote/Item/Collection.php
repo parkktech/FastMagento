@@ -42,6 +42,7 @@ use ParkkTech\FastMagento\Helper\ShellProductBuilder;
 class Collection extends \Magento\Quote\Model\ResourceModel\Quote\Item\Collection
 {
     private const XML_PATH_OS_SERVE = 'fastmagento/cart/os_serve_quote_items';
+    private const XML_PATH_OPTIMISTIC_STOCK = 'fastmagento/cart/optimistic_stock';
 
     /** @var OpenSearchPdpFetcher */
     private $osFetcher;
@@ -201,10 +202,22 @@ class Collection extends \Magento\Quote\Model\ResourceModel\Quote\Item\Collectio
             'prepare_catalog_product_collection_prices',
             ['collection' => $productCollection, 'store_id' => $storeId]
         );
-        $this->_eventManager->dispatch(
-            'sales_quote_item_collection_products_after_load',
-            ['collection' => $productCollection]
-        );
+        // sales_quote_item_collection_products_after_load drives the MSI stock preload
+        // (AddStockItemsObserver + InventoryCatalog\PreloadCache) — ~half the remaining
+        // per-load queries. It OVERWRITES each shell's already-live indexed stock_item with a
+        // fresh DB read. In "optimistic stock" mode we skip it: the shells keep their
+        // StockSyncer-live OS stock (correct for the cart's in-stock/low-stock UX), and the
+        // ONLY authoritative gate — MSI's CheckItemsQuantity at order placement, which
+        // re-derives salable qty by SKU and throws if short — is untouched, so a stale index
+        // can still never oversell (worst case: a rare graceful rejection at placement).
+        // qty-change validation (QuantityValidator, on sales_quote_item_qty_set_after) is a
+        // different event and still fires. Own flag, default off.
+        if (!$this->isOptimisticStockEnabled()) {
+            $this->_eventManager->dispatch(
+                'sales_quote_item_collection_products_after_load',
+                ['collection' => $productCollection]
+            );
+        }
 
         foreach ($this as $item) {
             /** @var ProductInterface $product */
@@ -287,6 +300,16 @@ class Collection extends \Magento\Quote\Model\ResourceModel\Quote\Item\Collectio
     private function isOsServeEnabled(): bool
     {
         return $this->osScopeConfig->isSetFlag(self::XML_PATH_OS_SERVE, ScopeInterface::SCOPE_STORE);
+    }
+
+    /**
+     * Optimistic-stock mode: trust the live-indexed OS stock for pre-placement UX and let MSI's
+     * placement-time CheckItemsQuantity be the sole authoritative gate. Skips the redundant
+     * per-load MSI stock preload. Separate flag, default off (checkout stock behaviour change).
+     */
+    private function isOptimisticStockEnabled(): bool
+    {
+        return $this->osScopeConfig->isSetFlag(self::XML_PATH_OPTIMISTIC_STOCK, ScopeInterface::SCOPE_STORE);
     }
 
     /**

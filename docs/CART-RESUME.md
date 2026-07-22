@@ -218,6 +218,27 @@ Of the OS-served ~19, the breakdown of what's LEFT (1-item cart):
 Net: the cheap safe wins are captured; the remaining meaningful headroom is the MSI stock block,
 gated on the owner's no-oversell risk call.
 
+### OPTIMISTIC STOCK prototype (2026-07-21) — flag `fastmagento/cart/optimistic_stock` (default 0)
+Proven the KEY safety fact: order placement is the sole authoritative stock gate —
+`InventorySales\Model\AppendReservations::reserve()` calls `CheckItemsQuantity::execute()`
+(line 101) BEFORE committing reservations; it re-checks salable qty BY SKU against live MSI and
+THROWS if short. A shell can't fool it → **placement can never oversell regardless of any
+pre-placement check.** So the per-load stock validation is UX, not correctness.
+Optimistic mode: when OS-serving, skip dispatching `sales_quote_item_collection_products_
+after_load` (AddStockItemsObserver + InventoryCatalog\PreloadCache). Shells keep their
+StockSyncer-live OS stock_item for cart UX; placement's CheckItemsQuantity stays the gate.
+- **Measured (warm, full request load+collectTotals):** downloadable 15→11 (-27%); simple
+  2-item 95→88 (-8%). Totals + tax BYTE-FOR-BYTE identical (guest/grp-1; simple w/ stock+tax
+  151.93=151.93); shell stock_item populated (qty 184/45), no null fatals.
+- **Finding:** naive "skip the preload" alone is modest — the bulk preload is efficient and the
+  reads are largely still needed downstream (QuantityValidator at collectTotals). A 2-item
+  SIMPLE cart is ~95 full-request queries (vs 15 downloadable): the weight is tax-calculation +
+  MSI salable-qty, which optimistic stock only partly touches. Fully collapsing it needs OS to
+  serve stock at EVERY read point (QuantityValidator/MSI salable) — a bigger, riskier project.
+- Behavioural note: with optimistic on, a limited-stock over-qty line is validated at PLACEMENT
+  (graceful rejection) rather than earlier. Default off; opt-in; validate in the supervised
+  order test (esp. a deliberately over-qty simple line) before enabling.
+
 Still owner-gated (step 5): real supervised order (guest + wholesale) — order-item conversion,
 stock decrement, no overselling — before enabling for real. GraphQL uses the same group-stamp
 mechanism but wasn't exercised here (Luma store → webapi_rest is the live path). Harnesses:
