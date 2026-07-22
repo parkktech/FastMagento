@@ -80,9 +80,10 @@ page.
 | Search results | 0.73 s | 0.66 s |
 | Cart / Checkout † | 1.16 s | 1.15 s |
 
-> † This row is the base serving layer with **Fast Checkout off**. Cart/checkout wall-clock is
-> dominated by configurable line-item hydration, which the opt-in **Fast Checkout** feature
-> removes — up to **8×** on configurable carts (see the **Fast Checkout** table below).
+> † This row is the base serving layer with **Fast Checkout off** (a small single-item cart).
+> Cart/checkout wall-clock is dominated by configurable line-item hydration and grows with basket
+> size, which the **default-on Fast Checkout** feature removes — a realistic **7-item cart goes
+> from ~4 s to ~0.4 s (~10×)**; see the **Fast Checkout** table below.
 
 > **How to read this.** The **query-count reduction is the scale-invariant metric**; the
 > wall-clock column is close *only because this is local dev*, where MySQL answers each query in
@@ -124,12 +125,15 @@ serves those line products from the index and flattens it. Warm render, this sto
 |---|---:|---:|
 | 1 simple | 0.93 s | 0.41 s |
 | 1 configurable | 1.08 s | 0.42 s |
-| **10 configurable variants** | **3.34 s** | **0.41 s** |
+| **7-product cart (real-world mix)** | **~4.0 s** | **~0.4 s** |
+| 10 configurable variants | 3.34 s | 0.41 s |
 
-Native adds **~230 ms of render per configurable line**; Fast Checkout is **flat** regardless of
-configurable count (≈0.4 s), an **8× cut** on a 10-configurable cart. Order placement still
-re-checks salable quantity by SKU (MSI reservations), so it cannot oversell; any product
-missing/partial in the index falls back to the native path automatically.
+Native cart/checkout render grows with every configurable line (~**230 ms each**), so a realistic
+basket compounds fast — a **7-product cart takes ~4 s** natively. Fast Checkout is **flat at
+≈0.4 s regardless of cart size or configurable count**, so that same 7-item cart renders in ~0.4 s
+— roughly a **10× cut**. Order placement still re-checks salable quantity by SKU (MSI
+reservations), so it cannot oversell; any product missing/partial in the index falls back to the
+native path automatically.
 
 ---
 
