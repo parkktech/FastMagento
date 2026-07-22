@@ -171,9 +171,9 @@
                 </field>
 
                 <field id="fast_stock_sync" translate="label comment" type="select" sortOrder="25" showInDefault="1" showInWebsite="1" showInStore="1">
-                    <label>Fast Stock Sync (patch index instead of full reproject)</label>
+                    <label>Advanced: Fast Stock Sync (patch index instead of full reproject)</label>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
-                    <comment><![CDATA[When an order, refund or inventory save changes stock, patch only the stock fields of the affected OpenSearch documents (in-stock flag, quantity, and composite child stock) instead of reprojecting the whole product from the database. Much cheaper for large configurables. Runs after the response is sent, so it never adds shopper latency. Automatically falls back to a full reprojection for any product not fully present in the index, so the index can't be left stale. <strong>Reindex once and verify parity before enabling in production.</strong>]]></comment>
+                    <comment><![CDATA[<em>Advanced / granular control — "Enable Fast Checkout" above already turns this on.</em> When an order, refund or inventory save changes stock, patch only the stock fields of the affected OpenSearch documents (in-stock flag, quantity, and composite child stock) instead of reprojecting the whole product from the database. Much cheaper for large configurables. Runs after the response is sent, so it never adds shopper latency. Automatically falls back to a full reprojection for any product not fully present in the index, so the index can't be left stale.]]></comment>
                 </field>
 
                 <field id="configurable_line_name" translate="label comment" type="select" sortOrder="30" showInDefault="1" showInWebsite="1" showInStore="1">

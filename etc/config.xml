@@ -91,24 +91,29 @@ xxxl, 3xl, triple xl</synonyms>
                 <max_terms>1200</max_terms>
             </ai>
             <cart>
-                <!-- Master toggle. Default ON. Enables OS-serving + optimistic stock together —
-                     the pair that makes configurable-heavy checkout fast. Safe by default: any
-                     product missing/partial in the index falls back to the native path, and order
-                     placement still gates stock by SKU (cannot oversell). Set to 0 to disable.
-                     The individual (advanced) toggles below can still turn either on by itself. -->
+                <!-- Master toggle. Default ON. Turning it on enables the WHOLE fast pipeline —
+                     OS-serving the quote items, optimistic stock, AND fast stock sync — so Fast
+                     Checkout works fully out of the box. Safe by default: any product
+                     missing/partial in the index falls back to the native path, and order
+                     placement still gates stock by SKU (cannot oversell). Set to 0 to disable the
+                     whole bundle. The individual (advanced) toggles below stay 0 by design: the
+                     master implies them, and each can still force its feature on by itself when
+                     the master is off (that OR is why they must default 0 — otherwise turning the
+                     master off would not disable them). -->
                 <enable_fast_checkout>1</enable_fast_checkout>
-                <!-- Default OFF: OS-serving the quote-item collection is checkout code; every
-                     commit stays inert until this is explicitly enabled in a store. -->
+                <!-- Advanced override (default 0). Implied ON by the master above. OS-serves the
+                     quote-item collection (checkout code). Set 1 to force on while the master is off. -->
                 <os_serve_quote_items>0</os_serve_quote_items>
-                <!-- Default OFF: optimistic stock — skip the redundant per-load MSI stock
-                     preload and rely on the placement-time CheckItemsQuantity gate. Requires
-                     os_serve_quote_items on. Changes checkout stock behaviour; opt-in only. -->
+                <!-- Advanced override (default 0). Implied ON by the master above. Optimistic
+                     stock — skip the redundant per-load MSI stock preload and rely on the
+                     placement-time CheckItemsQuantity gate. Set 1 to force on while master is off. -->
                 <optimistic_stock>0</optimistic_stock>
-                <!-- Default OFF: fast stock sync — when an order/refund/inventory save mutates
-                     stock, patch just the stock fields of the affected OpenSearch docs (mget →
-                     patch is_in_stock/qty + composite child stock → bulk re-index) instead of a
-                     full EAV product reprojection. Falls back to a full reproject for any doc
-                     missing/partial in the index. Background (post-response) work; opt-in. -->
+                <!-- Advanced override (default 0). Implied ON by the master above. Fast stock
+                     sync — when an order/refund/inventory save mutates stock, patch just the stock
+                     fields of the affected OpenSearch docs (mget → patch is_in_stock/qty +
+                     composite child stock → bulk re-index) instead of a full EAV reprojection.
+                     Falls back to a full reproject for any doc missing/partial in the index.
+                     Background (post-response) work. Set 1 to force on while the master is off. -->
                 <fast_stock_sync>0</fast_stock_sync>
                 <!-- Line-item name for configurable products on cart/mini-cart/checkout:
                      parent = the configurable name (Magento default), child = the purchased

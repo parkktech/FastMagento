@@ -21,11 +21,16 @@ class OpenSearchConfig extends AbstractHelper
     /**
      * Fast stock sync: patch just the stock fields of affected OpenSearch docs on a stock
      * change instead of a full EAV reprojection (falls back to a full reproject on any miss).
-     * Store-scoped flag, default off.
+     *
+     * Part of the Fast Checkout bundle: the master `enable_fast_checkout` toggle (default on)
+     * implies it — same pattern as OS-serve and optimistic stock — so the whole fast pipeline
+     * is on by default and turning Fast Checkout off disables it cleanly. The advanced
+     * `fast_stock_sync` flag can still force it on by itself when the master is off.
      */
     public function isFastStockSyncEnabled(): bool
     {
-        return $this->scopeConfig->isSetFlag('fastmagento/cart/fast_stock_sync');
+        return $this->scopeConfig->isSetFlag('fastmagento/cart/enable_fast_checkout')
+            || $this->scopeConfig->isSetFlag('fastmagento/cart/fast_stock_sync');
     }
 
     /**
