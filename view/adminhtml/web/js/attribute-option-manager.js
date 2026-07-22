@@ -28,7 +28,7 @@ define(['jquery'], function ($) {
         }
 
         function columns() {
-            var cols = [];
+            var cols = [{key: 'id', label: 'ID'}];
             if (config.isSwatch) { cols.push({key: 'swatch', label: config.swatchType === 'visual' ? 'Swatch' : 'Text'}); }
             config.stores.forEach(function (s) { cols.push({key: 'store_' + s.id, label: s.label}); });
             cols.push({key: 'sort', label: 'Sort'});
@@ -54,6 +54,7 @@ define(['jquery'], function ($) {
 
         function rowHtml(opt) {
             var tds = [];
+            tds.push('<td class="fm-aom-id">' + (opt.option_id ? esc(opt.option_id) : '—') + '</td>');
             if (config.isSwatch) { tds.push('<td>' + swatchCell(opt) + '</td>'); }
             config.stores.forEach(function (s, i) {
                 var val = opt.labels && opt.labels[i] != null ? opt.labels[i] : '';

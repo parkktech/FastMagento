@@ -52,23 +52,34 @@ class OptionRepository
         $page = max(1, $page);
         $pageSize = max(1, min(200, $pageSize));
 
-        // total (with optional admin-label search)
-        $countSel = $conn->select()->from(['o' => $tOpt], ['n' => 'COUNT(*)'])->where('o.attribute_id = ?', $attributeId);
-        if ($search !== '') {
-            $countSel->join(['v' => $tVal], 'v.option_id = o.option_id AND v.store_id = 0', [])
-                ->where('v.value LIKE ?', '%' . $search . '%');
-        }
+        // Search by NAME (admin label LIKE) or ID (exact option_id when the term is numeric) —
+        // so a specific option can be found among tens of thousands. LEFT join so an id match
+        // survives even if a label row were missing.
+        $applySearch = static function ($select) use ($conn, $tVal, $search): void {
+            if ($search === '') {
+                return;
+            }
+            $select->joinLeft(['v' => $tVal], 'v.option_id = o.option_id AND v.store_id = 0', []);
+            $cond = $conn->quoteInto('v.value LIKE ?', '%' . $search . '%');
+            if (ctype_digit($search)) {
+                $cond = '(' . $cond . ' OR ' . $conn->quoteInto('o.option_id = ?', (int) $search) . ')';
+            }
+            $select->where($cond);
+        };
+
+        // total (respecting the search filter)
+        $countSel = $conn->select()->from(['o' => $tOpt], ['n' => 'COUNT(DISTINCT o.option_id)'])
+            ->where('o.attribute_id = ?', $attributeId);
+        $applySearch($countSel);
         $total = (int) $conn->fetchOne($countSel);
 
         // page of option ids (bounded — this is what keeps the page load flat)
         $idSel = $conn->select()->from(['o' => $tOpt], ['o.option_id', 'o.sort_order'])
             ->where('o.attribute_id = ?', $attributeId)
+            ->group('o.option_id')
             ->order('o.sort_order ASC')->order('o.option_id ASC')
             ->limit($pageSize, ($page - 1) * $pageSize);
-        if ($search !== '') {
-            $idSel->join(['v' => $tVal], 'v.option_id = o.option_id AND v.store_id = 0', [])
-                ->where('v.value LIKE ?', '%' . $search . '%');
-        }
+        $applySearch($idSel);
         $rows = $conn->fetchAll($idSel);
         $optionIds = array_map(static fn ($r) => (int) $r['option_id'], $rows);
 
