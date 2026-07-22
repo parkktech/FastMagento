@@ -374,11 +374,32 @@ once, pushed to the index, then served from OpenSearch thereafter.
 
 ---
 
-## AI-powered search relevance
+## AI-powered search relevance (search so good it's almost unfair)
 
-Instant search is tuned to behave like Algolia/Sphinx on a real catalogue, and it self-optimises
-from your own content. The goal: **install the extension, run the AI mapping tool, and get the
-best possible search with almost no hand-tuning.**
+We'll say it: **on a real, messy catalog this is a better search experience than most billion-dollar
+storefronts** — because it doesn't just index your words, it *learns your catalog's language* with
+AI and tunes itself. Install the extension, add a Claude API key, run the AI mapping tool once, and
+get near-best-possible search with almost no hand-tuning.
+
+The AI reads **your own content** — attribute labels, category names and a sample of product names —
+and builds the language layer for you:
+
+- **AI synonym & thesaurus discovery from your content** — finds the equivalents shoppers actually
+  type and folds them into the thesaurus (e.g. it learns `front end ↔ frontend`, `rear end ↔ back
+  end`, `u-bolt ↔ ubolt`, `rock racer ↔ rockracer` straight from your product names). No hand-curation.
+- **AI per-product keyword discovery** — fills a hidden `fm_search_keywords` field per product with
+  the buyer terms and aliases your copy never mentions (UTV ↔ side-by-side ↔ SxS, brand/fitment
+  nicknames), so the right product surfaces for words that aren't on the page.
+- **Grammatical & compound-word variants** — spacing/hyphenation/plural pairs (`t-shirt ↔ tshirt ↔
+  tee`) discovered automatically, with a guardrail against building groups around common words.
+- **Similar words & misspellings** — typo tolerance plus AI-discovered misspelling/variant pairs, so
+  a fat-fingered query still lands.
+- **Smart stop words & exceptions** — stop words are stripped for recall but preserved where they
+  matter (a phrase like "side by side" survives instead of collapsing to "side").
+- **Symmetric synonyms** — a term and its synonyms are scored as true equals, so `frontend` and
+  `front end` (or `sxs` and `utv`) return **identical** results in the same order.
+
+Everything below is the ranking engine those AI layers feed into.
 
 ### Relevance engine
 
