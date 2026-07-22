@@ -47,4 +47,14 @@
                 sortOrder="10"/>
     </type>
 
+    <!-- Optimistic-stock: also suspend the marketplace per-line stock observer (it re-loads +
+         re-saves the stock item on every qty-set, cascading into MSI source-item syncs — the
+         bulk of a physical/configurable cart's query load). Same flags + servable-area gate;
+         placement's CheckItemsQuantity stays the authoritative gate. Default off. -->
+    <type name="Jadog\Marketplacechanges\Observer\QuantityValidatorObserver">
+        <plugin name="fastmagento_optimistic_skip_marketplace_qty"
+                type="ParkkTech\FastMagento\Plugin\Inventory\OptimisticObserverSkipPlugin"
+                sortOrder="10"/>
+    </type>
+
 </config>
