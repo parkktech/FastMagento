@@ -152,6 +152,74 @@ missing/partial in the index falls back to the native path automatically.
 
 ---
 
+## AI-powered search relevance
+
+Instant search is tuned to behave like Algolia/Sphinx on a real catalogue, and it self-optimises
+from your own content. The goal: **install the extension, run the AI mapping tool, and get the
+best possible search with almost no hand-tuning.**
+
+### Relevance engine
+
+The query builder (`Model/Search/InstantSearch::buildQuery`) ranks results with:
+
+- **Exact / phrase boosting** — a product whose name/keywords contain the query as a contiguous
+  phrase outranks docs where the words are merely scattered, so "skid plate" ranks the actual
+  skid plates above everything that just contains "plate".
+- **All-terms precision boost** — products matching *every* term (across name + keywords +
+  description) rank above single-term hits, without ever costing recall.
+- **Multi-term operator** — `FastMagento > Search > Multi-Term Operator`: **Any** (OR, broadest),
+  **Most** (75%), or **All** (AND, most precise).
+- **Symmetric synonyms** — a query and its synonyms are scored as true equivalents, so
+  `frontend` and `front end` (or `sxs` and `utv`) return **identical** results in the same order.
+  Phrase-level expansion means single-word ⇄ multi-word variants work (`frontend ⇄ front end`,
+  `a-arm ⇄ control arm`), which token-level swapping cannot do.
+- **Typo tolerance**, **in-stock boost**, and a **custom-ranking** tie-breaker (all admin toggles).
+
+### Two synonym homes — used automatically
+
+- **Global synonym thesaurus** (`Search > Synonyms`) — for *distinctive* terms. Ships with a
+  **bundled starter database** (`etc/thesaurus/starter-synonyms.json`, imported on install,
+  merge-safe) covering compound/grammatical variants (front end, back end, rear end, t-shirt),
+  colours, sizes, materials and misspellings.
+- **Per-product AI keyword layer** (`fm_search_keywords`) — a hidden, high-weight searchable
+  attribute the AI fills per product with buyer terms and aliases (UTV ↔ side-by-side ↔ SxS,
+  fitment/brand nicknames), so a product surfaces for terms its visible copy never mentions.
+  Buyer phrases built from common words (e.g. "side by side") live here, where they match
+  precisely, rather than as global synonyms that would over-broaden.
+
+### AI tools (Claude) — scrape your content, optimise search
+
+Add a Claude API key under `FastMagento > AI Assistant`, then:
+
+- **Generate Thesaurus** (admin button) — scrapes your attribute labels, category names **and a
+  sample of product names**, and discovers the grammatical/compound variants your copy actually
+  uses (e.g. `rear end ↔ back end ↔ backend`, `u-bolt ↔ ubolt`, `rock racer ↔ rockracer`),
+  merging them into `Search > Synonyms`. It is guard-railed against building groups around common
+  words.
+- **Generate Search Keywords** (CLI) — populates `fm_search_keywords` for the catalogue, off the
+  request path, in resumable best-effort batches:
+
+  ```bash
+  bin/magento fastmagento:search-keywords:generate [--from --to --batch --limit --force --dry-run]
+  bin/magento indexer:reindex catalogsearch_fulltext   # make the new keywords searchable
+  ```
+
+  Enable via `FastMagento > Search > AI Search Keywords`. Use a fast model (e.g. Haiku/Sonnet)
+  under `AI Assistant > Model` for large catalogues.
+
+### Measuring relevance
+
+`docs/tools/search-relevance.php` runs a set of golden queries through the **real** query builder
+and prints the ranked top-N with scores plus pass/fail checks, so ranking changes are measured,
+not guessed:
+
+```bash
+php app/code/ParkkTech/FastMagento/docs/tools/search-relevance.php            # golden-queries.json
+php app/code/ParkkTech/FastMagento/docs/tools/search-relevance.php "front end" "sxs"
+```
+
+---
+
 ## Requirements
 
 - Magento 2.4.x (Open Source / Commerce), base install.
