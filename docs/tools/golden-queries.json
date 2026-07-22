@@ -7,8 +7,8 @@
   },
   {
     "query": "side by side",
-    "note": "Synonym of UTV — should surface UTV products via thesaurus / keyword layer.",
-    "expect_top_any": ["utv", "side by side", "sxs", "rzr", "ranger", "maverick"],
+    "note": "Buyer phrase for UTV — driven by the per-product AI keyword layer (NOT a global synonym, which would over-broaden on the common word 'side'). Matches UTV suspension/seat parts via their hidden keywords; names may not contain 'utv'.",
+    "expect_top_any": ["utv", "sxs", "arm", "link", "suspension", "seat"],
     "avoid_top3": []
   },
   {

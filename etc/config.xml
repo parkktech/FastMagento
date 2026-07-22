@@ -34,8 +34,14 @@
                      keywords. Blank falls back to the facet attributes above. -->
                 <keyword_source_attributes/>
                 <stopwords>a, an, and, or, the, of, for, with, to, in, on, at, by, is, it, this, that, your, my</stopwords>
+                <!-- Global synonym groups. Keep terms DISTINCTIVE: a group term that is a common
+                     catalogue word (e.g. "side" inside "side by side") over-broadens every query
+                     that expands to it, because synonym equivalents are matched at full strength.
+                     Put buyer PHRASES that contain common words (e.g. "side by side" -> UTV) in the
+                     per-product AI keyword layer (fm_search_keywords) instead, where they match
+                     precisely. That's why "sxs, utv" lives here but "side by side" does not. -->
                 <synonyms>frontend, front end
-side by side, side-by-side, sxs, utv
+sxs, utv
 atv, quad, four wheeler, 4 wheeler, four-wheeler
 a-arm, a arm, control arm, control-arm
 sway bar, anti-roll bar, stabilizer bar, swaybar
