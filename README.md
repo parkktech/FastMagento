@@ -100,6 +100,50 @@ query reductions but feels less wall-clock benefit (see the note under Benchmark
 
 ---
 
+## 📊 Performance at scale — 500,000 products (with vs without)
+
+> **⏳ Placeholder — numbers being captured.** These tables are measured on a purpose-built
+> **500,000-product** stress catalog (500k simple products across 4,167 configurables, **50,000
+> color options**, every bra/apparel size) in an isolated database, by toggling
+> `ParkkTech_FastMagento` on and off and replaying the same requests. Values below are filled in
+> once the scale reindex + benchmark run completes.
+
+<p align="center"><em>📈 chart placeholder — <code>docs/img/scale-benchmark.svg</code> (page load &amp; SQL, native vs FastMagento @ 500k)</em></p>
+
+**Page load / render time @ 500k products**
+
+| Surface | Without (native) | With FastMagento | Speed-up |
+|---|---:|---:|---:|
+| Homepage | _TBD_ | _TBD_ | _TBD_ |
+| PDP · simple | _TBD_ | _TBD_ | _TBD_ |
+| PDP · configurable (7,500-variant) | _TBD_ | _TBD_ | _TBD_ |
+| Category / PLP | _TBD_ | _TBD_ | _TBD_ |
+| Search results (SERP) | _TBD_ | _TBD_ | _TBD_ |
+| Cart / checkout (multi-line) | _TBD_ | _TBD_ | _TBD_ |
+
+**SQL queries per cold render @ 500k products**
+
+| Surface | Without (native) | With FastMagento | Reduction |
+|---|---:|---:|---:|
+| PDP · configurable | _TBD_ | _TBD_ | _TBD_ |
+| Category / PLP | _TBD_ | _TBD_ | _TBD_ |
+| Search results | _TBD_ | _TBD_ | _TBD_ |
+| Cart / checkout | _TBD_ | _TBD_ | _TBD_ |
+
+**DOM / front-end @ 500k products**
+
+| Metric | Without (native) | With FastMagento |
+|---|---:|---:|
+| Time to first byte (TTFB) | _TBD_ | _TBD_ |
+| DOMContentLoaded | _TBD_ | _TBD_ |
+| Fully loaded | _TBD_ | _TBD_ |
+| Admin: attribute-edit page (50k-option attr) | _crashes / hangs_ | _TBD (paginated)_ |
+
+> The reference numbers below are from a mid-sized (~14.6k-product) catalog and already committed;
+> the 500k tables above are the headline "does it hold at scale" proof.
+
+---
+
 ## Benchmarks — with vs without the extension
 
 Measured on this storefront by toggling `ParkkTech_FastMagento` on and off and replaying the
