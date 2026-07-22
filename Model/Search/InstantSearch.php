@@ -312,7 +312,9 @@ class InstantSearch
     private function expandQuery(string $query): array
     {
         $stop = $this->relevanceConfig->getStopwords();
-        $lower = trim(mb_strtolower($query));
+        // Collapse internal whitespace so a multi-word synonym ("side by side") still matches a
+        // query typed with stray double spaces.
+        $lower = trim((string) preg_replace('/\s+/', ' ', mb_strtolower($query)));
         $stripStop = static function (string $phrase) use ($stop): string {
             return implode(' ', array_filter(
                 preg_split('/\s+/', $phrase) ?: [],
@@ -336,7 +338,13 @@ class InstantSearch
                     if ($syn === $term) {
                         continue;
                     }
-                    $variant = $stripStop(trim((string) preg_replace($pattern, $syn, $lower)));
+                    // Callback replacement so a synonym containing $ / \1 is inserted literally,
+                    // not interpreted as a preg backreference.
+                    $variant = $stripStop(trim((string) preg_replace_callback(
+                        $pattern,
+                        static fn () => $syn,
+                        $lower
+                    )));
                     if ($variant !== '' && $variant !== $clean && !in_array($variant, $variants, true)) {
                         $variants[] = $variant;
                     }

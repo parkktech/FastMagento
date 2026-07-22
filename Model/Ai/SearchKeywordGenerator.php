@@ -72,7 +72,9 @@ class SearchKeywordGenerator
             throw new \RuntimeException('No Claude API key is configured (FastMagento > AI Assistant).');
         }
 
-        $batchSize = max(1, min(100, (int) ($options['batch'] ?? self::DEFAULT_BATCH_SIZE)));
+        // Treat a missing/0 batch as "use the default" — the CLI passes 0 when --batch is omitted.
+        $batchSize = (int) ($options['batch'] ?? 0);
+        $batchSize = $batchSize > 0 ? min(100, $batchSize) : self::DEFAULT_BATCH_SIZE;
         $limit = max(0, (int) ($options['limit'] ?? 0));
         $force = (bool) ($options['force'] ?? false);
         $dryRun = (bool) ($options['dry_run'] ?? false);
