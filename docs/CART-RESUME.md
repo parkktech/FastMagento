@@ -101,15 +101,35 @@ address, grand 591.85), median of 25, then restored developer mode. Bench harnes
   preload, `validate_timestamps=0`, more/《warm》 fpm workers, DB/Redis proximity) typically has a
   30–80 ms REST floor, not 250 ms.
 
-**BOTTOM LINE for the sub-100 ms goal:** it is gated by the **~250 ms per-request framework
-floor = infrastructure**, not by anything in the FastMagento layer. Stage 1 (quote-load flatten)
-and the totals path optimize the ~70 ms checkout slice, of which the quote load is a fraction —
-real, but a small share while a 250 ms infra floor dominates. **The next lever is operational, not
-code:** (a) `opcache.preload` a Magento preload list + `opcache.validate_timestamps=0` (needs the
-php-fpm ini + an fpm reload — I lack passwordless sudo, so the owner runs this); (b) FPM pool
-tuning / keep-alive; (c) DB/Redis proximity. Re-run `totals-http-bench.sh` after each to quantify.
-Do NOT invest further in a collectTotals code fast-path — it cannot touch the 250 ms floor and the
-warm checkout slice is already small.
+**BOTTOM LINE for the sub-100 ms goal:** it is gated by the **~250 ms (prod) / ~306 ms (dev)
+per-request framework floor**, which is **Magento bootstrap CPU across 385 enabled modules**, not
+the FastMagento layer. Stage 1 and the totals path optimize the ~70 ms checkout slice on top of
+the floor — real, but small while the floor dominates.
+
+**CONFIG/CACHE LEVERS — ALL TESTED, NONE HELP (2026-07-21, measured, not assumed):**
+- Web SAPI here is **mod_php (apache2handler)**, PHP 8.3, NOT php-fpm. opcache lives in
+  `/etc/php/8.3/apache2/conf.d/`; changing `opcache.memory_consumption` needs `systemctl restart
+  apache2` (a reload does NOT reallocate the SHM).
+- Trivial cartless REST call fires only **~11 DB queries** → the floor is NOT database/Redis/FPC.
+  Warming caches does nothing (checkout is uncacheable and the caches were already warm).
+- **opcache was undersized** (128 MB, 0 MB free, max_accelerated_files 10000, 95% hit). Bumped to
+  512 MB / 130000 files / interned 32 → 451 MB free, no thrashing. **Trivial-REST floor unchanged
+  (315→309 ms).** The 95% hit rate already meant the misses were cheap; sizing was never the cost.
+- **`opcache.validate_timestamps=0`** (kills the per-request file-stat, a WSL2-relevant angle):
+  **also no change (306 ms).**
+- **Production mode** (compiled DI + static): totals 332→319 ms (−4%); trivial floor 315→250 ms.
+  The only lever that moved anything, and only modestly.
+  All opcache changes were REVERTED — box left as found (128 MB default). `validate_timestamps=0`
+  is unsafe to leave in developer mode anyway (hides code edits).
+
+**So the floor is genuinely CPU-bound Magento bootstrap and NOTHING config/cache/mode fixes it
+meaningfully.** The only real paths to sub-100 ms checkout are ARCHITECTURAL, not operational:
+(a) fewer enabled modules (each adds per-request bootstrap — 385 is heavy; audit
+Mirasvit/Mageplaza/PayPal/Avada etc. for genuinely-unused ones); (b) faster CPU / better-tuned
+prod host (a lean prod box floors ~30–80 ms, so the 250 ms here is partly this hardware); (c) a
+purpose-built lightweight checkout/totals endpoint that bypasses Magento's full bootstrap — a big,
+risky project. Do NOT invest further in a collectTotals code fast-path or in cache/opcache tuning:
+both are proven not to touch the floor.
 
 **How to resume / test:** enable both flags; harnesses in the session scratchpad
 (`quote-timing.php`, `quote-profile.php`, `collect-profile.php`, `breakdown.php`,
