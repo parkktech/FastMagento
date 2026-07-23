@@ -175,7 +175,10 @@ query reductions but feels less wall-clock benefit (see the note under Benchmark
 > which are identical in both columns. On a production DB (millions of EAV rows, 1–5 ms/query,
 > networked/replicated) that same query collapse is **seconds** of latency and a large drop in DB
 > load. The design goal — **product/EAV SQL stays flat as the catalog grows** — holds; native does
-> not.
+> not. These page-time figures are **server response (TTFB-class)**; the real *browser* gap is
+> wider, because native Magento also ships a heavier DOM (more blocks, more inline data) that costs
+> the browser more to parse and render — a full-page-load (DOMContentLoaded / fully-loaded)
+> comparison amplifies the difference beyond what server time alone shows.
 
 **Cached (FPC hit) @ 500k** — the returning-user experience:
 
@@ -308,7 +311,8 @@ you came for:
 | 🛒 [Fast Checkout](#feature-fast-checkout--no-more-30-inventory-loops) | 30× inventory loops on add-to-cart / cart |
 | 🔄 [Real-time stock & price sync](#feature-real-time-stock--price-sync) | stale index after orders / rule changes |
 | 💲 [Per-customer-group & B2B pricing](#feature-per-customer-group--b2b-pricing-served-from-the-index) | per-group price N+1 |
-| 🎨 [Paginated attribute options (50k+)](#feature-paginated-attribute-options--manage-50000-options-without-crashing) | attribute page crashing at 50k+ options |
+| 🎨 [Paginated attribute options (50k+) — filter & bulk-clean unused](#feature-paginated-attribute-options--manage-50000-options-without-crashing) | attribute page crashing at 50k+ options; thousands of unused options |
+| 🏷️ [Option labels served from OpenSearch](#feature-option-labels-served-from-opensearch-no-mysql-on-the-hot-path) | residual `eav_attribute_option` reads on PDP / PLP / search |
 | 🏎️ [Faster admin on the same hardware](#feature-faster-admin-on-the-same-hardware) | admin slow while frontend hits the DB |
 | 🛟 [Read-path resilience & fallback](#feature-read-path-resilience--fallback) | OpenSearch outage safety |
 | 🔌 [Drop-in & third-party transparent](#feature-drop-in--third-party-transparent-base-magento-only) | going fast without core patches |
@@ -666,6 +670,14 @@ FastMagento replaces that screen with a **paginated option manager**:
   guard plugin also stops the native "save the whole array" path from ever running, so a Save
   Attribute click can't wipe or overwrite the option set.
 - **All option types** — dropdown, multiple-select, visual swatch (colour/image) and text swatch.
+- **"Assigned to a product" column + filter** — each row shows whether the option is used by any
+  product (resolved efficiently from the product's backend table — `int`/`varchar`/`text`, so it is
+  correct for select *and* multiselect). Filter the grid to **Any / Yes / No** to see exactly which
+  options are dead weight (on the stress catalog's 50k `color`, that's **23,201 unused**).
+- **Bulk delete** — a checkbox column with select-all-on-page and **Delete Selected**, plus
+  **Delete All Matching** which removes the *entire* filtered set across all pages in one chunked
+  action (so filter → **Assigned: No** → delete clears thousands of unused options at once). Both
+  confirm with a count; if the set still includes in-use options the confirm warns before deleting.
 
 On by default (`FastMagento > … attribute_pagination/enabled`); no configuration needed.
 
@@ -954,10 +966,12 @@ curl -s "http://localhost:9200/magento2_products/_mapping?pretty"
 - Grouped and bundle read paths are indexed but not yet fully exercised for add-to-cart.
 - The serving index projects the **default store view**; per-store serving is tracked
   separately for multi-store setups.
-- **Search facets** cover **single-select** attributes today; multi-select attributes
-  (e.g. Compatible Platforms) are deferred — the native fulltext index sorts a doc's option-id
-  and option-label arrays independently, so an id can't be mapped to its label from OpenSearch
-  alone. A per-attribute option dictionary in the index would close this.
+- **Storefront layered-nav & PDP option labels** (select **and** multiselect) are now served from
+  the OpenSearch **option dictionary** (`fastmagento_attribute_option`), so Shop By / Additional
+  Information resolve labels with 0 MySQL. The **instant search-results-page facets** still read the
+  native fulltext index for buckets, where a doc's option-id and option-label arrays sort
+  independently — extending those facets to read the same dictionary is the remaining step to full
+  multi-select facet labels on the live SERP.
 - **Fast Checkout** is **on by default** but changes checkout stock behaviour (optimistic stock
   relies on the placement-time SKU gate), so validate it with a real order — guest + a logged-in
   group, plus a deliberately over-qty line — after go-live; it also assumes a fresh price/rule
