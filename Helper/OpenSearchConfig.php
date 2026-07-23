@@ -58,4 +58,18 @@ class OpenSearchConfig extends AbstractHelper
 
         return $defaultPrefix . '_' . $customSuffix;
     }
+
+    /**
+     * ✅ Attribute-option dictionary index name (sibling of the product/category indexes).
+     * Holds every option-bearing attribute's {option_id => label} set so option labels
+     * (PDP additional attributes, layered-nav facets, swatches, search) resolve from OpenSearch
+     * instead of eav_attribute_option* MySQL loads. e.g. magento2_attribute_options.
+     */
+    public function getAttributeOptionIndexName(): string
+    {
+        $defaultPrefix = $this->scopeConfig->getValue('catalog/search/opensearch_index_prefix') ?? 'magento2';
+        $customSuffix = $this->scopeConfig->getValue('fastmagento/indexing/opensearch_option_index_prefix') ?? 'attribute_options';
+
+        return $defaultPrefix . '_' . $customSuffix;
+    }
 }

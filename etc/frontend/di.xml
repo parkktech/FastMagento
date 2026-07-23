@@ -242,4 +242,12 @@
         </arguments>
     </virtualType>-->
 
+    <!-- Serve select/multiselect option labels from the OpenSearch dictionary (frontend only),
+         removing the residual eav_attribute_option(_value) loads on served PDP attributes,
+         layered-nav facets and swatches. Falls back to native on any miss. -->
+    <type name="Magento\Eav\Model\Entity\Attribute\Source\Table">
+        <plugin name="fastmagento_option_dictionary"
+                type="ParkkTech\FastMagento\Plugin\Eav\SourceOptionPlugin" sortOrder="10"/>
+    </type>
+
 </config>

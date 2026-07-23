@@ -26,4 +26,18 @@
             Projects the category tree (structure, menu flags, url paths) from EAV to OpenSearch.
         </description>
     </indexer>
+    <indexer
+        id="fastmagento_attribute_option"
+        view_id="fastmagento_attribute_option"
+        class="ParkkTech\FastMagento\Model\Indexer\AttributeOptionIndexer"
+        primary="fastmagento_attribute_option"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:noNamespaceSchemaLocation="urn:magento:framework:Indexer/etc/indexer.xsd"
+    >
+        <title translate="true">FastMagento Attribute Options</title>
+        <description translate="true">
+            Projects each option-bearing attribute's option→label dictionary to OpenSearch so option
+            labels (PDP attributes, layered-nav facets, swatches, search) resolve without MySQL.
+        </description>
+    </indexer>
 </config>

@@ -30,4 +30,10 @@
             <table name="catalog_category_entity_decimal" entity_column="entity_id" />
         </subscriptions>
     </view>
+    <view id="fastmagento_attribute_option" class="ParkkTech\FastMagento\Model\Indexer\AttributeOptionIndexer" group="indexer">
+        <subscriptions>
+            <table name="eav_attribute_option" entity_column="option_id" />
+            <table name="eav_attribute_option_value" entity_column="option_id" />
+        </subscriptions>
+    </view>
 </config>
