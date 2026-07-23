@@ -43,7 +43,7 @@ class OptionRepository
      * @return array{total:int, page:int, page_size:int, options:array<int,array<string,mixed>>, stores:array<int,string>, is_swatch:bool, swatch_type:string}
      * @throws LocalizedException
      */
-    public function getPage(int $attributeId, int $page = 1, int $pageSize = 50, string $search = ''): array
+    public function getPage(int $attributeId, int $page = 1, int $pageSize = 50, string $search = '', string $assigned = ''): array
     {
         $attribute = $this->attribute($attributeId);
         $conn = $this->resource->getConnection();
@@ -52,34 +52,23 @@ class OptionRepository
         $page = max(1, $page);
         $pageSize = max(1, min(200, $pageSize));
 
-        // Search by NAME (admin label LIKE) or ID (exact option_id when the term is numeric) —
-        // so a specific option can be found among tens of thousands. LEFT join so an id match
-        // survives even if a label row were missing.
-        $applySearch = static function ($select) use ($conn, $tVal, $search): void {
-            if ($search === '') {
-                return;
-            }
-            $select->joinLeft(['v' => $tVal], 'v.option_id = o.option_id AND v.store_id = 0', []);
-            $cond = $conn->quoteInto('v.value LIKE ?', '%' . $search . '%');
-            if (ctype_digit($search)) {
-                $cond = '(' . $cond . ' OR ' . $conn->quoteInto('o.option_id = ?', (int) $search) . ')';
-            }
-            $select->where($cond);
-        };
+        $source = $this->usageSource($attribute);
+        // For multiselect the used option-ids live comma-packed in one column, so we parse the set
+        // once and reuse it for both the filter and the per-row flag. Single-value (select/swatch)
+        // attributes filter via an IN-subquery instead — no need to pull the set into PHP.
+        $usedSet = $source['multiselect'] ? $this->multiselectUsedSet($attributeId, $source) : null;
 
-        // total (respecting the search filter)
-        $countSel = $conn->select()->from(['o' => $tOpt], ['n' => 'COUNT(DISTINCT o.option_id)'])
-            ->where('o.attribute_id = ?', $attributeId);
-        $applySearch($countSel);
+        // total (respecting search + assignment filters)
+        $countSel = $conn->select()->from(['o' => $tOpt], ['n' => 'COUNT(DISTINCT o.option_id)']);
+        $this->applyFilters($countSel, $tVal, $search, $assigned, $attributeId, $source, $usedSet);
         $total = (int) $conn->fetchOne($countSel);
 
         // page of option ids (bounded — this is what keeps the page load flat)
         $idSel = $conn->select()->from(['o' => $tOpt], ['o.option_id', 'o.sort_order'])
-            ->where('o.attribute_id = ?', $attributeId)
             ->group('o.option_id')
             ->order('o.sort_order ASC')->order('o.option_id ASC')
             ->limit($pageSize, ($page - 1) * $pageSize);
-        $applySearch($idSel);
+        $this->applyFilters($idSel, $tVal, $search, $assigned, $attributeId, $source, $usedSet);
         $rows = $conn->fetchAll($idSel);
         $optionIds = array_map(static fn ($r) => (int) $r['option_id'], $rows);
 
@@ -90,6 +79,7 @@ class OptionRepository
             $labels = $this->labelsByOption($optionIds);              // [option_id][store_id] => value
             $swatches = $isSwatch ? $this->swatchesByOption($optionIds) : [];
             $default = $this->defaultOptionIds($attributeId);
+            $assignedFlags = $this->assignedFlags($attributeId, $source, $optionIds, $usedSet);
             foreach ($rows as $r) {
                 $oid = (int) $r['option_id'];
                 $options[] = [
@@ -99,6 +89,7 @@ class OptionRepository
                     'admin_label' => (string) ($labels[$oid][0] ?? ''),
                     'swatch' => $swatches[$oid] ?? null,
                     'is_default' => in_array($oid, $default, true),
+                    'assigned' => (bool) ($assignedFlags[$oid] ?? false),
                 ];
             }
         }
@@ -108,6 +99,97 @@ class OptionRepository
             'options' => $options, 'stores' => $stores,
             'is_swatch' => $isSwatch, 'swatch_type' => $this->swatchType($attribute),
         ];
+    }
+
+    /**
+     * Delete a set of options by id (each with its per-store value + swatch rows), guarded to the
+     * given attribute. Chunked so removing tens of thousands of options stays within sane
+     * transaction sizes. Returns the number of option rows actually removed.
+     *
+     * @param int[] $optionIds
+     * @throws LocalizedException
+     */
+    public function deleteMany(int $attributeId, array $optionIds): int
+    {
+        $this->attribute($attributeId); // validates the attribute exists / is EAV
+        $optionIds = array_values(array_unique(array_filter(array_map('intval', $optionIds))));
+        if (!$optionIds) {
+            return 0;
+        }
+        $conn = $this->resource->getConnection();
+        $tOpt = $this->resource->getTableName('eav_attribute_option');
+        $tVal = $this->resource->getTableName('eav_attribute_option_value');
+        $tSw = $this->resource->getTableName('eav_attribute_option_swatch');
+
+        // keep only ids that actually belong to this attribute (never delete across attributes)
+        $owned = array_map('intval', $conn->fetchCol(
+            $conn->select()->from($tOpt, 'option_id')
+                ->where('attribute_id = ?', $attributeId)
+                ->where('option_id IN (?)', $optionIds)
+        ));
+        if (!$owned) {
+            return 0;
+        }
+
+        $deleted = 0;
+        foreach (array_chunk($owned, 2000) as $chunk) {
+            $conn->beginTransaction();
+            try {
+                $conn->delete($tVal, ['option_id IN (?)' => $chunk]);
+                $conn->delete($tSw, ['option_id IN (?)' => $chunk]);
+                $deleted += (int) $conn->delete($tOpt, ['option_id IN (?)' => $chunk, 'attribute_id = ?' => $attributeId]);
+                $conn->commit();
+            } catch (\Throwable $e) {
+                $conn->rollBack();
+                throw new LocalizedException(__('Bulk delete failed: %1', $e->getMessage()));
+            }
+        }
+        $this->reinitableConfig->reinit();
+        return $deleted;
+    }
+
+    /**
+     * Delete EVERY option matching the current search + assignment filter (across all pages), e.g.
+     * "all unassigned options". Resolves the full matching id set with the same filters getPage()
+     * uses, then hands off to deleteMany(). Returns the number removed.
+     *
+     * @throws LocalizedException
+     */
+    public function deleteAllMatching(int $attributeId, string $search = '', string $assigned = ''): int
+    {
+        $attribute = $this->attribute($attributeId);
+        $conn = $this->resource->getConnection();
+        $tOpt = $this->resource->getTableName('eav_attribute_option');
+        $tVal = $this->resource->getTableName('eav_attribute_option_value');
+        $source = $this->usageSource($attribute);
+        $usedSet = $source['multiselect'] ? $this->multiselectUsedSet($attributeId, $source) : null;
+
+        $sel = $conn->select()->from(['o' => $tOpt], ['o.option_id'])->group('o.option_id');
+        $this->applyFilters($sel, $tVal, $search, $assigned, $attributeId, $source, $usedSet);
+        $ids = array_map('intval', $conn->fetchCol($sel));
+        return $this->deleteMany($attributeId, $ids);
+    }
+
+    /**
+     * Count how many of the matching options are still assigned to a product — so the UI can warn
+     * before a bulk delete touches in-use values. Cheap when a filter is already narrowing the set.
+     */
+    public function countAssignedInMatch(int $attributeId, string $search = '', string $assigned = ''): int
+    {
+        // An "unassigned only" set has, by definition, nothing in use.
+        if ($assigned === 'no') {
+            return 0;
+        }
+        $attribute = $this->attribute($attributeId);
+        $source = $this->usageSource($attribute);
+        $usedSet = $source['multiselect'] ? $this->multiselectUsedSet($attributeId, $source) : null;
+        $conn = $this->resource->getConnection();
+        $tOpt = $this->resource->getTableName('eav_attribute_option');
+        $tVal = $this->resource->getTableName('eav_attribute_option_value');
+        // options matching the (search) filter that are ALSO assigned to a product
+        $sel = $conn->select()->from(['o' => $tOpt], ['n' => 'COUNT(DISTINCT o.option_id)']);
+        $this->applyFilters($sel, $tVal, $search, 'yes', $attributeId, $source, $usedSet);
+        return (int) $conn->fetchOne($sel);
     }
 
     /**
@@ -205,6 +287,132 @@ class OptionRepository
     }
 
     // ── internals ────────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Apply the shared attribute + search + product-assignment filters to an option Select (alias
+     * 'o' on eav_attribute_option). One place so getPage()/deleteAllMatching()/countAssignedInMatch()
+     * stay in lock-step.
+     *
+     * @param array{table:string,multiselect:bool} $source
+     * @param int[]|null                            $usedSet parsed used option-ids (multiselect only)
+     */
+    private function applyFilters($select, string $tVal, string $search, string $assigned, int $attributeId, array $source, ?array $usedSet): void
+    {
+        $conn = $this->resource->getConnection();
+        $select->where('o.attribute_id = ?', $attributeId);
+
+        // Search by NAME (admin label LIKE) or ID (exact option_id when numeric).
+        if ($search !== '') {
+            $select->joinLeft(['v' => $tVal], 'v.option_id = o.option_id AND v.store_id = 0', []);
+            $cond = $conn->quoteInto('v.value LIKE ?', '%' . $search . '%');
+            if (ctype_digit($search)) {
+                $cond = '(' . $cond . ' OR ' . $conn->quoteInto('o.option_id = ?', (int) $search) . ')';
+            }
+            $select->where($cond);
+        }
+
+        if ($assigned !== 'yes' && $assigned !== 'no') {
+            return; // "any" — no assignment constraint
+        }
+
+        if ($source['multiselect']) {
+            // used ids were parsed from the comma-packed value column
+            $ids = $usedSet ?? [];
+            if ($assigned === 'yes') {
+                $ids ? $select->where('o.option_id IN (?)', $ids) : $select->where('1 = 0');
+            } elseif ($ids) {
+                $select->where('o.option_id NOT IN (?)', $ids);
+            }
+            return;
+        }
+
+        // single-value select/swatch: the backend value column holds the option id directly, so a
+        // (NOT) IN subquery answers "assigned?" without materialising the set in PHP.
+        $sub = (string) $conn->select()->from($source['table'], ['value'])
+            ->where('attribute_id = ?', $attributeId)
+            ->where('value IS NOT NULL');
+        $select->where('o.option_id ' . ($assigned === 'yes' ? 'IN' : 'NOT IN') . ' (' . $sub . ')');
+    }
+
+    /**
+     * Where and how a product records this attribute's value, so we can tell which options are in
+     * use. `table` is the EAV backend table (int/varchar/text — resolved from the attribute, so it
+     * is correct whatever the backend_type). `multiselect` marks the comma-packed value layout.
+     *
+     * @return array{table:string,multiselect:bool}
+     */
+    private function usageSource(AbstractAttribute $attribute): array
+    {
+        return [
+            'table' => $this->resource->getTableName((string) $attribute->getBackendTable()),
+            'multiselect' => $attribute->getFrontendInput() === 'multiselect',
+        ];
+    }
+
+    /**
+     * Distinct option-ids used by any product for a multiselect attribute, parsed out of the
+     * comma-packed value column (e.g. "74,80"). Computed once per request and reused.
+     *
+     * @param array{table:string,multiselect:bool} $source
+     * @return int[]
+     */
+    private function multiselectUsedSet(int $attributeId, array $source): array
+    {
+        $conn = $this->resource->getConnection();
+        $rows = $conn->fetchCol(
+            $conn->select()->distinct()->from($source['table'], ['value'])
+                ->where('attribute_id = ?', $attributeId)
+                ->where('value IS NOT NULL')
+                ->where("value <> ''")
+        );
+        $set = [];
+        foreach ($rows as $csv) {
+            foreach (explode(',', (string) $csv) as $part) {
+                $part = trim($part);
+                if ($part !== '' && ctype_digit($part)) {
+                    $set[(int) $part] = true;
+                }
+            }
+        }
+        return array_keys($set);
+    }
+
+    /**
+     * Which of the given (already-bounded to a page) option ids are assigned to a product.
+     *
+     * @param array{table:string,multiselect:bool} $source
+     * @param int[]                                 $optionIds
+     * @param int[]|null                            $usedSet parsed used ids (multiselect only)
+     * @return array<int,bool> option_id => assigned
+     */
+    private function assignedFlags(int $attributeId, array $source, array $optionIds, ?array $usedSet): array
+    {
+        $flags = array_fill_keys($optionIds, false);
+        if (!$optionIds) {
+            return $flags;
+        }
+        if ($source['multiselect']) {
+            $used = array_fill_keys($usedSet ?? [], true);
+            foreach ($optionIds as $oid) {
+                if (isset($used[$oid])) {
+                    $flags[$oid] = true;
+                }
+            }
+            return $flags;
+        }
+        $conn = $this->resource->getConnection();
+        $used = $conn->fetchCol(
+            $conn->select()->distinct()->from($source['table'], ['value'])
+                ->where('attribute_id = ?', $attributeId)
+                ->where('value IN (?)', $optionIds)
+        );
+        foreach ($used as $v) {
+            if (isset($flags[(int) $v])) {
+                $flags[(int) $v] = true;
+            }
+        }
+        return $flags;
+    }
 
     private function saveSwatch(int $attributeId, int $optionId, ?string $value, string $swatchType): void
     {

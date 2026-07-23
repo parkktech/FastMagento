@@ -13,7 +13,14 @@ $configJson = $block->getConfigJson();
         <div class="fm-aom-toolbar">
             <input type="text" class="fm-aom-search input-text admin__control-text"
                    placeholder="<?= $block->escapeHtmlAttr(__('Search by name or ID…')) ?>"/>
+            <select class="fm-aom-assigned admin__control-select" title="<?= $block->escapeHtmlAttr(__('Assigned to a product')) ?>">
+                <option value=""><?= $block->escapeHtml(__('Assigned: Any')) ?></option>
+                <option value="yes"><?= $block->escapeHtml(__('Assigned: Yes')) ?></option>
+                <option value="no"><?= $block->escapeHtml(__('Assigned: No')) ?></option>
+            </select>
             <button type="button" class="fm-aom-add action-secondary"><?= $block->escapeHtml(__('Add Option')) ?></button>
+            <button type="button" class="fm-aom-delsel action-secondary" disabled><?= $block->escapeHtml(__('Delete Selected')) ?></button>
+            <button type="button" class="fm-aom-delall action-secondary"><?= $block->escapeHtml(__('Delete All Matching')) ?></button>
             <span class="fm-aom-status"></span>
         </div>
         <table class="data-grid fm-aom-table" style="width:100%;margin-top:8px;">
@@ -34,7 +41,13 @@ $configJson = $block->getConfigJson();
     #fm-attribute-option-manager .fm-aom-table th,
     #fm-attribute-option-manager .fm-aom-table td { padding:6px 8px; text-align:left; vertical-align:middle; }
     #fm-attribute-option-manager .fm-aom-swatch { width:26px; height:26px; border:1px solid #ccc; border-radius:3px; display:inline-block; }
-    #fm-attribute-option-manager .fm-aom-status { color:#555; }
+    #fm-attribute-option-manager .fm-aom-status { color:#555; margin-left:4px; }
     #fm-attribute-option-manager .fm-aom-pager button { margin-right:6px; }
     #fm-attribute-option-manager .fm-aom-row-dirty { background:#fffbe6; }
+    #fm-attribute-option-manager .fm-aom-check-col { width:32px; text-align:center; }
+    #fm-attribute-option-manager .fm-aom-assigned-cell { white-space:nowrap; font-weight:600; }
+    #fm-attribute-option-manager .fm-aom-badge-yes { color:#1a7f37; }
+    #fm-attribute-option-manager .fm-aom-badge-no { color:#9a6700; }
+    #fm-attribute-option-manager .fm-aom-delsel[disabled] { opacity:.5; cursor:default; }
+    #fm-attribute-option-manager tr.fm-aom-checked { background:#eaf3ff; }
 </style>

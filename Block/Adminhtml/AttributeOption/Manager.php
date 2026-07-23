@@ -65,6 +65,7 @@ class Manager extends Template
             'gridUrl' => $this->getUrl('fastmagento/attributeOption/grid'),
             'saveUrl' => $this->getUrl('fastmagento/attributeOption/save'),
             'deleteUrl' => $this->getUrl('fastmagento/attributeOption/delete'),
+            'massDeleteUrl' => $this->getUrl('fastmagento/attributeOption/massDelete'),
         ]);
     }
 

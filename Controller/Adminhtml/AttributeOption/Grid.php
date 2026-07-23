@@ -30,13 +30,23 @@ class Grid extends Action implements HttpGetActionInterface
     public function execute()
     {
         $result = $this->jsonFactory->create();
+        $request = $this->getRequest();
         try {
+            $attributeId = (int) $request->getParam('attribute_id');
+            $search = trim((string) $request->getParam('search', ''));
+            $assigned = (string) $request->getParam('assigned', '');
             $data = $this->options->getPage(
-                (int) $this->getRequest()->getParam('attribute_id'),
-                (int) $this->getRequest()->getParam('page', 1),
-                (int) $this->getRequest()->getParam('page_size', 50),
-                trim((string) $this->getRequest()->getParam('search', ''))
+                $attributeId,
+                (int) $request->getParam('page', 1),
+                (int) $request->getParam('page_size', 50),
+                $search,
+                $assigned
             );
+            // Opt-in (used only when opening the "delete all matching" confirm): how many of the
+            // matched options are still assigned to a product, so the UI can warn precisely.
+            if ($request->getParam('counts')) {
+                $data['assigned_in_match'] = $this->options->countAssignedInMatch($attributeId, $search, $assigned);
+            }
             return $result->setData(['success' => true] + $data);
         } catch (\Throwable $e) {
             return $result->setData(['success' => false, 'message' => $e->getMessage()]);
