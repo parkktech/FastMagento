@@ -482,6 +482,24 @@ facets, swatches, search) is projected into an OpenSearch **option dictionary** 
 so a served page resolves labels with **zero `eav_attribute_option` MySQL reads** — dropping the
 residual per-page option lookups to **0** on PDP, PLP and search. Native fallback on any miss.
 
+## Feature: Fast, non-blocking reindex
+
+> **Reindex a 500k catalog in minutes, and never take the store down doing it.** ⚡
+
+The product indexer is **set-based and batched**: it loads each chunk of products in one pass
+instead of one `getById()` per product, so it **doesn't drag every installed third-party module
+through a per-product load** (a single mis-behaving extension can otherwise add millions of wasted
+queries to a reindex) and it builds each OpenSearch document from explicit batched queries. On a
+**500,000-product** catalog this cut a full reindex from **~2.6 hours to ~50 minutes (≈3× overall,
+and ~8× on the simple-product volume)** — with **no extra hardware and no parallelization** (which
+would just fight the app server for CPU); it's simply less work per product.
+
+**Products never disappear while it's reindexing.** Search and product pages keep serving throughout
+a rebuild: any product not yet in the (rebuilding) serving index is **loaded natively once and
+read-through-indexed on the spot** (*warm-on-miss*), so a shopper never sees an empty results grid or
+a missing PDP mid-reindex — the store stays fully live from the first second of the rebuild to the
+last.
+
 ## Feature: Read-path resilience & fallback
 
 *Warm-on-miss* (a product missing from the index is loaded natively once, projected, then served
