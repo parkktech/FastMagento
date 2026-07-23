@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace ParkkTech\FastMagento\Model\Search;
 
 use Magento\AdvancedSearch\Model\Client\ClientResolver;
+use Magento\Catalog\Api\ProductRepositoryInterface;
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\Pricing\PriceCurrencyInterface;
 use Magento\Framework\Search\EngineResolverInterface;
@@ -33,7 +34,8 @@ class InstantSearch
         private readonly ScopeConfigInterface $scopeConfig,
         private readonly PriceCurrencyInterface $priceCurrency,
         private readonly WriteLog $writeLog,
-        private readonly RelevanceConfig $relevanceConfig
+        private readonly RelevanceConfig $relevanceConfig,
+        private readonly ProductRepositoryInterface $productRepository
     ) {
     }
 
@@ -393,6 +395,52 @@ class InstantSearch
         if (!$ids) {
             return [];
         }
+        $byId = $this->mgetSource($client, $ids);
+
+        // Warm-on-miss: the fulltext (matching) index and our serving index can drift out of
+        // sync — most visibly mid-reindex, when the native fulltext index (blue-green, always
+        // complete) matches a product our serving index hasn't projected yet. Without this, that
+        // product would be silently dropped and the results grid would blank out DURING a reindex.
+        // Instead, load each missing hit natively once (which read-through-indexes it into
+        // OpenSearch via the repository plugin), then re-fetch. GET/mget by id is realtime in
+        // OpenSearch, so the re-fetch sees the just-warmed doc immediately, and the next search is
+        // a pure OS read. Bounded by page size, degrades silently — a reindex never hides products.
+        $missing = array_values(array_filter($ids, static fn ($id) => !isset($byId[$id])));
+        if ($missing) {
+            $storeId = (int) $this->storeManager->getStore()->getId();
+            foreach ($missing as $mid) {
+                try {
+                    $this->productRepository->getById($mid, false, $storeId, false);
+                } catch (\Throwable $e) {
+                    $this->writeLog->writeErrorLog(
+                        '[FastMagento] search warm-on-miss failed for product ' . $mid . ': ' . $e->getMessage()
+                    );
+                }
+            }
+            $byId += $this->mgetSource($client, $missing);
+        }
+
+        $products = [];
+        foreach ($ids as $id) {                 // keep relevance order from the search index
+            if (isset($byId[$id])) {
+                $products[] = $this->formatProduct($id, $byId[$id], $query);
+            }
+        }
+        return $products;
+    }
+
+    /**
+     * One mget against the serving index → [entity_id => _source] for the docs that are present.
+     *
+     * @param mixed $client
+     * @param int[] $ids
+     * @return array<int, array<string, mixed>>
+     */
+    private function mgetSource($client, array $ids): array
+    {
+        if (!$ids) {
+            return [];
+        }
         $response = $client->getOpenSearchClient()->mget([
             'index' => $this->openSearchConfig->getIndexName(),
             'body' => ['ids' => array_map('strval', $ids)],
@@ -404,14 +452,7 @@ class InstantSearch
                 $byId[(int) $doc['_id']] = $doc['_source'];
             }
         }
-
-        $products = [];
-        foreach ($ids as $id) {                 // keep relevance order from the search index
-            if (isset($byId[$id])) {
-                $products[] = $this->formatProduct($id, $byId[$id], $query);
-            }
-        }
-        return $products;
+        return $byId;
     }
 
     /**
