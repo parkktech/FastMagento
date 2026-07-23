@@ -1,0 +1,17 @@
+{
+    "catalog_product_entity_varchar": {
+        "index": {
+            "CATALOG_PRODUCT_ENTITY_VARCHAR_ATTRIBUTE_ID_STORE_ID_VALUE": true
+        }
+    },
+    "catalog_product_entity_decimal": {
+        "index": {
+            "CATALOG_PRODUCT_ENTITY_DECIMAL_ATTRIBUTE_ID_STORE_ID_VALUE": true
+        }
+    },
+    "catalog_product_entity_datetime": {
+        "index": {
+            "CATALOG_PRODUCT_ENTITY_DATETIME_ATTRIBUTE_ID_STORE_ID_VALUE": true
+        }
+    }
+}

@@ -1,0 +1,45 @@
+<?xml version="1.0"?>
+<!--
+    FastMagento — large-catalog index pack (auto-applied on setup:upgrade).
+
+    Magento ships the EAV product value tables indexed on (attribute_id) alone, so any query
+    filtering products by an attribute VALUE (layered navigation, attribute filters, admin
+    product-grid filters, "products where color = Red") scans every row for that attribute and
+    tests the value afterwards. On a 500k catalog that is ~570,000 rows examined to return a
+    handful. A composite (attribute_id, store_id, value) index turns that scan into a seek.
+
+    Proven on catalog_product_entity_varchar (1.15M rows, 500k catalog):
+        WHERE attribute_id=73 AND store_id=0 AND value='Red'
+        before: key=..._ATTRIBUTE_ID              rows examined = 571,866  (Using where)
+        after:  key=FASTMAG_..._ATTR_STORE_VALUE   rows examined = 1
+
+    Only _varchar, _decimal and _datetime are covered here: Magento already ships
+    CATALOG_PRODUCT_ENTITY_INT_ATTRIBUTE_ID_STORE_ID_VALUE on the _int table (select/dropdown
+    attributes = layered nav), so adding it there would be a duplicate. _text is omitted (TEXT
+    needs a prefix length and is rarely filtered). Index names are FASTMAG_* so they never
+    collide with core index names. Benefits any large Magento 2 store, not just FastMagento.
+-->
+<schema xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:noNamespaceSchemaLocation="urn:magento:framework:Setup/Declaration/Schema/etc/schema.xsd">
+    <table name="catalog_product_entity_varchar">
+        <index referenceId="FASTMAG_CPE_VARCHAR_ATTR_STORE_VALUE" indexType="btree">
+            <column name="attribute_id"/>
+            <column name="store_id"/>
+            <column name="value"/>
+        </index>
+    </table>
+    <table name="catalog_product_entity_decimal">
+        <index referenceId="FASTMAG_CPE_DECIMAL_ATTR_STORE_VALUE" indexType="btree">
+            <column name="attribute_id"/>
+            <column name="store_id"/>
+            <column name="value"/>
+        </index>
+    </table>
+    <table name="catalog_product_entity_datetime">
+        <index referenceId="FASTMAG_CPE_DATETIME_ATTR_STORE_VALUE" indexType="btree">
+            <column name="attribute_id"/>
+            <column name="store_id"/>
+            <column name="value"/>
+        </index>
+    </table>
+</schema>
