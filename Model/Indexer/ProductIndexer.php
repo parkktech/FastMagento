@@ -1557,43 +1557,27 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
 
     private function getCustomAttributesArray(\Magento\Catalog\Model\Product $product, array $configurableOptions): array
     {
+        // A parent's child record only needs the fields the read path consumes:
+        //  - the super-attribute option ids (raw) → variant matching + swatch / jsonConfig,
+        //  - type_id and status(label) → child shell type + getAllowProducts' enabled check.
+        // Every OTHER attribute a child carries is served from the child's OWN doc when a variant
+        // is actually selected (getProductByAttributes reloads it by id), so indexing all ~50
+        // attributes per child was pure bloat — and the dominant cost of projecting a big
+        // configurable (its ~660+ children × every attribute). Iterating only the super-attributes
+        // here (instead of $product->getAttributes()) is what makes configurable indexing fast.
         $customAttributes = [];
-        foreach ($product->getAttributes() as $attribute) {
-            $attributeCode = $attribute->getAttributeCode();
-            $value = $product->getData($attributeCode);
-
-            if (in_array($attributeCode, $configurableOptions)) {
-                $customAttributes[$attributeCode] = $value;
-                continue;
-            }
-
-            // Resolve select/multiselect labels via the per-run option-label cache
-            // (getAllOptions once per attribute) instead of getAttributeText(), whose
-            // getOptionText() hits the DB per option per child — thousands of round-trips
-            // across a big configurable's children.
-            if ($attribute->usesSource()) {
-                $source = $this->safeGetSource($attribute);
-                if ($source) {
-                    $raw = (string)$value;
-                    if ($raw !== '' && strpos($raw, ',') !== false) {
-                        $labels = [];
-                        foreach (explode(',', $raw) as $optionId) {
-                            $label = $this->resolveOptionLabel($attributeCode, $source, trim($optionId));
-                            if ($label !== '') {
-                                $labels[] = $label;
-                            }
-                        }
-                        $value = $labels;
-                    } else {
-                        $value = $this->resolveOptionLabel($attributeCode, $source, $value);
-                    }
-                }
-            }
-
-            if (!empty($value)) {
-                $customAttributes[$attributeCode] = $value;
+        foreach ($configurableOptions as $code) {
+            $value = $product->getData($code);
+            if ($value !== null && $value !== '') {
+                $customAttributes[$code] = $value;   // raw option ids (color=86, size=89, …)
             }
         }
+        $customAttributes['type_id'] = $product->getTypeId();
+        // Status is indexed as its label; ShellProductBuilder maps "Disabled" back to numeric.
+        $customAttributes['status'] =
+            ((int) $product->getData('status') === \Magento\Catalog\Model\Product\Attribute\Source\Status::STATUS_DISABLED)
+                ? 'Disabled'
+                : 'Enabled';
         return $customAttributes;
     }
 
