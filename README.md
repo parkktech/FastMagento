@@ -135,45 +135,68 @@ query reductions but feels less wall-clock benefit (see the note under Benchmark
 
 ## 📊 Performance at scale — 500,000 products (with vs without)
 
-> **⏳ Placeholder — numbers being captured.** These tables are measured on a purpose-built
-> **500,000-product** stress catalog (500k simple products across 4,167 configurables, **50,000
-> color options**, every bra/apparel size) in an isolated database, by toggling
-> `ParkkTech_FastMagento` on and off and replaying the same requests. Values below are filled in
-> once the scale reindex + benchmark run completes.
+> Measured on a purpose-built **500,000-product** stress catalog (513k simple products across
+> **4,187 configurables**, a **50,000-option** color attribute, every bra/apparel size) in an
+> isolated database. **Apples-to-apples**: the module is fully **disabled** (`module:disable`, real
+> native MySQL) vs **enabled**, replaying the *same* URLs and the *same* 10-configured-item cart.
+> **Cold render** (Full-Page-Cache disabled) — the honest comparison, because on an FPC *hit* both
+> states serve identical cached HTML. The store runs its real third-party stack (Webkul
+> Marketplace, Stripe, …) on every page in **both** columns.
 
-<p align="center"><em>📈 chart placeholder — <code>docs/img/scale-benchmark.svg</code> (page load &amp; SQL, native vs FastMagento @ 500k)</em></p>
-
-**Page load / render time @ 500k products**
+**Page load / render time @ 500k products (cold render)**
 
 | Surface | Without (native) | With FastMagento | Speed-up |
 |---|---:|---:|---:|
-| Homepage | _TBD_ | _TBD_ | _TBD_ |
-| PDP · simple | _TBD_ | _TBD_ | _TBD_ |
-| PDP · configurable (7,500-variant) | _TBD_ | _TBD_ | _TBD_ |
-| Category / PLP | _TBD_ | _TBD_ | _TBD_ |
-| Search results (SERP) | _TBD_ | _TBD_ | _TBD_ |
-| Cart / checkout (multi-line) | _TBD_ | _TBD_ | _TBD_ |
+| Home / CMS | 893 ms | **553 ms** | **1.6×** |
+| PDP · simple | 546 ms | 512 ms | ~1× |
+| PDP · configurable (660-variant) | 1,354 ms | **918 ms** | **1.5×** |
+| Category / PLP | 560 ms | 593 ms | ~1× |
+| Search results (SERP) | 1,720 ms | **714 ms** | **2.4×** |
+| Cart · collectTotals (10 configured) | 543 ms | **117 ms** | **4.6×** |
+| Checkout · `totals-information` | 1,636 ms | **1,118 ms** | **1.5×** |
 
-**SQL queries per cold render @ 500k products**
+**SQL queries per cold render @ 500k products** — the scale-invariant metric:
 
 | Surface | Without (native) | With FastMagento | Reduction |
 |---|---:|---:|---:|
-| PDP · configurable | _TBD_ | _TBD_ | _TBD_ |
-| Category / PLP | _TBD_ | _TBD_ | _TBD_ |
-| Search results | _TBD_ | _TBD_ | _TBD_ |
-| Cart / checkout | _TBD_ | _TBD_ | _TBD_ |
+| Home / CMS | 5,734 | **116** | **−98%** |
+| PDP · simple | 822 | 512 | −38% |
+| PDP · configurable | 774 | 494 | −36% |
+| Category / PLP | 484 | 256 | −47% |
+| Search results | 610 | **48** | **−92%** |
+| Cart · collectTotals (10 configured) | 1,683 | **141** | **−92%** |
+| Checkout · `totals-information` | 2,688 | 654 | −76% |
 
-**DOM / front-end @ 500k products**
+> **How to read it (honestly).** The **query-count collapse is the headline** — the homepage alone
+> goes **5,734 → 116** queries, and the never-cached cart/checkout path drops **~12×**. Wall-clock
+> wins are biggest where data-loading is the bottleneck (home, search, configurable PDP, cart);
+> it's roughly flat on light pages (simple PDP, small category) because there the time is dominated
+> by PHP rendering + third-party modules (**Webkul Marketplace alone fires ~180 queries/PDP**),
+> which are identical in both columns. On a production DB (millions of EAV rows, 1–5 ms/query,
+> networked/replicated) that same query collapse is **seconds** of latency and a large drop in DB
+> load. The design goal — **product/EAV SQL stays flat as the catalog grows** — holds; native does
+> not.
+
+**Cached (FPC hit) @ 500k** — the returning-user experience:
+
+| Surface | With **or** without FastMagento |
+|---|---:|
+| Any FPC-cached page (home, PDP, category) | **~231 ms** (identical — served from cache) |
+| Search results (not FPC-cached) | ~665 ms |
+
+> On an FPC hit both states are identical (~231 ms) — the extension's win is on cache **miss** (first
+> views, high-churn catalogs) and the **never-cached** paths: search, cart, checkout.
+
+**Admin @ 500k** — the 50,000-option attribute:
 
 | Metric | Without (native) | With FastMagento |
 |---|---:|---:|
-| Time to first byte (TTFB) | _TBD_ | _TBD_ |
-| DOMContentLoaded | _TBD_ | _TBD_ |
-| Fully loaded | _TBD_ | _TBD_ |
-| Admin: attribute-edit page (50k-option attr) | _crashes / hangs_ | _TBD (paginated)_ |
+| Attribute-edit page (50k-option `color`) | **crashes / hangs** | **opens instantly** (paginated, 50/page) |
 
-> The reference numbers below are from a mid-sized (~14.6k-product) catalog and already committed;
-> the 500k tables above are the headline "does it hold at scale" proof.
+<p align="center"><img src="docs/img/demo-attribute-manager.gif" alt="Paginated attribute-option manager on a 50,000-option attribute" width="100%"/></p>
+
+> The reference numbers below are from a mid-sized (~14.6k-product) catalog; the 500k tables above
+> are the headline "does it hold at scale" proof.
 
 ---
 
@@ -424,9 +447,22 @@ FastMagento replaces that screen with a **paginated option manager**:
   the whole set is never rewritten. A guard plugin stops the native "save the whole array" path
   from ever running, so a Save Attribute click can't wipe your options.
 - **Every option type** — dropdown, multiple-select, visual swatch (color/image), text swatch.
+- **"Assigned to a product" column + filter** — see at a glance which options are actually used, and
+  filter to **Any / Yes / No**. On the 50k `color` attribute this instantly surfaces the **23,201
+  unused** options.
+- **Bulk delete** — check rows and delete the selection, or **"Delete All Matching"** to remove the
+  entire filtered set across all pages in one action (chunked). Cleaning out *thousands* of dead
+  options — filter → Unassigned → delete — is one click; the confirm warns if any are still in use.
 
 On by default. See [Admin: paginated attribute options](#admin-paginated-attribute-options-large-catalog-fix)
 for details.
+
+## Feature: Option labels served from OpenSearch (no MySQL on the hot path)
+
+Every select/multiselect **option label** (PDP "Additional Information", layered-nav **Shop By**
+facets, swatches, search) is projected into an OpenSearch **option dictionary** and served from it,
+so a served page resolves labels with **zero `eav_attribute_option` MySQL reads** — dropping the
+residual per-page option lookups to **0** on PDP, PLP and search. Native fallback on any miss.
 
 ## Feature: Read-path resilience & fallback
 
