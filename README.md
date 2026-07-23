@@ -148,7 +148,7 @@ query reductions but feels less wall-clock benefit (see the note under Benchmark
 | Surface | Without (native) | With FastMagento | Speed-up |
 |---|---:|---:|---:|
 | Home / CMS | 893 ms | **553 ms** | **1.6×** |
-| PDP · simple | 546 ms | 512 ms | ~1× |
+| PDP · simple | 546 ms | 536 ms | ~1× |
 | PDP · configurable (660-variant) | 1,354 ms | **918 ms** | **1.5×** |
 | Category / PLP | 560 ms | 593 ms | ~1× |
 | Search results (SERP) | 1,720 ms | **714 ms** | **2.4×** |
@@ -160,7 +160,7 @@ query reductions but feels less wall-clock benefit (see the note under Benchmark
 | Surface | Without (native) | With FastMagento | Reduction |
 |---|---:|---:|---:|
 | Home / CMS | 5,734 | **116** | **−98%** |
-| PDP · simple | 822 | 512 | −38% |
+| PDP · simple | 822 | 540 | −34% |
 | PDP · configurable | 774 | 494 | −36% |
 | Category / PLP | 484 | 256 | −47% |
 | Search results | 610 | **48** | **−92%** |
