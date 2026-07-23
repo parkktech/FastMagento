@@ -146,10 +146,6 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
 
     public function execute($ids)
     {
-        $indexName = $this->getIndexName();
-        $client = $this->getSearchClient();
-        $storeId = $this->getIndexStoreId();
-
         if (empty($ids)) {
             // Stream entity ids set-based; never materialise full products just to list ids.
             $connection = $this->productCollectionFactory->create()->getConnection();
@@ -158,6 +154,21 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
                     ->from($this->productCollectionFactory->create()->getMainTable(), ['entity_id'])
             );
         }
+        // The heavy path is the batched/deterministic loader: set-based per chunk, no per-product
+        // getById interceptor overhead, output explicitly defined (parity-verified against the old
+        // per-product path). executePerProduct() below is retained as a reference/emergency path.
+        $this->executeBatched(array_map('intval', $ids));
+    }
+
+    /**
+     * Legacy per-product loader (getById + prepareDoc per product). Superseded by executeBatched()
+     * and no longer called; kept as a reference and emergency fallback.
+     */
+    private function executePerProduct($ids): void
+    {
+        $indexName = $this->getIndexName();
+        $client = $this->getSearchClient();
+        $storeId = $this->getIndexStoreId();
 
         $docs = [];
         foreach ($ids as $id) {
@@ -255,6 +266,29 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
     }
 
     private function setExtensionAttributes($body) {
+        // Batched path: build extension_attributes deterministically from the chunk context —
+        // the full stock-item row (+ product type, as the per-product stock item carries), the
+        // configurable child links, and one empty object per assigned category (matching how the
+        // per-product path's category_links serialise). The read path only reads these three keys.
+        if ($this->batchCtx !== null) {
+            $pid = (int) ($body['entity_id'] ?? 0);
+            $stockFull = $this->batchCtx['stockFull'][$pid] ?? null;
+            unset($body['extension_attributes']);
+            if ($stockFull !== null) {
+                $stockFull['type_id'] = $body['type_id'] ?? null;
+                $body['extension_attributes']['stock_item'] = $stockFull;
+                $childIds = (isset($body['type_id']) && $body['type_id'] === 'configurable')
+                    ? ($this->batchCtx['childLinks'][$pid] ?? [])
+                    : [];
+                $links = [];
+                foreach ($childIds as $cid) { $links[(string) $cid] = (string) $cid; }
+                $body['extension_attributes']['configurable_product_links'] = $links;
+                $catCount = (int) ($this->batchCtx['catLinkCount'][$pid] ?? 0);
+                $body['extension_attributes']['category_links'] = $catCount > 0 ? array_fill(0, $catCount, []) : null;
+            }
+            return $body;
+        }
+
         $extensionAttributes = isset($body['extension_attributes']) ? $body['extension_attributes'] : null;
         if (null !== $extensionAttributes && $extensionAttributes instanceof \Magento\Catalog\Api\Data\ProductExtension) {
             $stockItem = $extensionAttributes->getStockItem();
@@ -295,6 +329,490 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
         $this->execute($ids);
     }
 
+    /**
+     * Chunk size for the batched loader — how many products are loaded set-based per pass.
+     */
+    private const BATCH_LOAD_SIZE = 500;
+
+    /**
+     * Per-chunk batch context: every per-product helper query, done ONCE set-based for the whole
+     * chunk and keyed by product id. Null outside a batched run — the shared prepareDoc()/
+     * setExtensionAttributes() fall back to their per-product path (executeRow / warm-on-miss),
+     * so single-product behaviour is unchanged.
+     *
+     * @var array<string, array<int, mixed>>|null
+     */
+    private ?array $batchCtx = null;
+
+    /**
+     * Fast, deterministic reindex (the default heavy path). Loads products SET-BASED per chunk via
+     * a product collection instead of one productRepository->getById() per product, then builds a
+     * doc whose contents are EXPLICITLY defined by this indexer — not incidentally by whichever
+     * plugins happen to fire on a per-product load. Why this is the robust, scalable design:
+     *  - The collection never goes through the per-id getById interceptor chain, so third-party
+     *    per-product overhead (e.g. Webkul's marketplace_userdata on every load) never fires —
+     *    a GENERAL win for any store with any getById-plugging module, not a per-extension hack.
+     *  - Every field the doc needs (stock, salability, tier, catalog-rule, categories, request
+     *    path, parents, websites) is reproduced from ONE batched query per chunk, so output does
+     *    not depend on load-method quirks and stays identical across sites/extensions.
+     *  - Products are still real Product objects carrying all EAV + custom attributes, so
+     *    best-practice extensions (attributes / extension attributes) stay compatible. Extensions
+     *    that inject computed data via per-load plugins are surfaced by the admin efficiency
+     *    monitor rather than silently indexed.
+     */
+    public function executeBatched(array $ids): void
+    {
+        $ids = array_values(array_filter(array_map('intval', $ids)));
+        if (!$ids) {
+            return;
+        }
+        $indexName = $this->getIndexName();
+        $client = $this->getSearchClient();
+        $storeId = $this->getIndexStoreId();
+
+        foreach (array_chunk($ids, self::BATCH_LOAD_SIZE) as $chunk) {
+            // Composite types (configurable / bundle / grouped) build their doc from the product
+            // TYPE INSTANCE (super attributes, selections), whose EAV metadata depends on how the
+            // parent was loaded — batching them can't be byte-identical. They are a tiny slice of a
+            // catalog (~1%), so route them through the canonical per-product path (guaranteed
+            // accurate) and reserve the fast batched path for the simple/virtual/downloadable
+            // volume. Not a user setting — an internal correctness route.
+            $types = $this->fetchProductTypes($chunk);
+            $batchIds = [];
+            $canonicalIds = [];
+            foreach ($chunk as $id) {
+                if (in_array($types[$id] ?? 'simple', ['configurable', 'bundle', 'grouped'], true)) {
+                    $canonicalIds[] = $id;
+                } else {
+                    $batchIds[] = $id;
+                }
+            }
+
+            $docs = [];
+            $flush = function (array &$docs, bool $force = false) use ($client, $indexName) {
+                if ($docs && ($force || count($docs) >= self::FLUSH_SIZE)) {
+                    $this->bulkIndexNDJSON($client, $indexName, $docs);
+                    $docs = [];
+                }
+            };
+
+            // --- Canonical path FIRST: composite types (configurable / bundle / grouped) ---
+            // Run these before the collection load so their getById fully primes the shared EAV
+            // attribute cache; a collection's addAttributeToSelect('*') otherwise caches lean
+            // attribute metadata that would then leak into getConfigurableAttributes() and change
+            // the super-attribute serialisation the read path rebuilds.
+            foreach ($canonicalIds as $id) {
+                try {
+                    $product = $this->productRepository->getById($id, false, $storeId, false);
+                    if (!$product->getId()) {
+                        continue;
+                    }
+                    $body = $this->prepareDoc($product);
+                    $body = $this->setExtensionAttributes($body);
+                    $docs[] = ['id' => (string) $product->getId(), 'body' => $body];
+                } catch (\Throwable $e) {
+                    $this->writeLog->writeErrorLog(
+                        'Product ID: ' . $id . ' skipped during batched indexing (composite): ' . $e->getMessage()
+                    );
+                }
+                $flush($docs);
+            }
+
+            // --- Fast deterministic path: simple / virtual / downloadable ---
+            if ($batchIds) {
+                $collection = $this->productCollectionFactory->create();
+                $collection->setStoreId($storeId)
+                    ->addAttributeToSelect('*')
+                    ->addFieldToFilter('entity_id', ['in' => $batchIds]);
+                $collection->load();
+
+                // One set-based query per data point for the whole chunk.
+                $this->batchCtx = [
+                    'stock'        => $this->getStockMap($batchIds),
+                    'stockFull'    => $this->getStockFullMap($batchIds),
+                    'categories'   => $this->batchCategoryNames($batchIds, $storeId),
+                    'categoryIds'  => $this->batchCategoryIds($batchIds),
+                    'mediaGallery' => $this->batchMediaGallery($batchIds, $storeId),
+                    'requestPaths' => $this->batchRequestPaths($batchIds, $storeId),
+                    'rule'         => $this->getRulePriceMapByGroup($batchIds),
+                    'tier'         => $this->getChildTierPrices($batchIds),
+                    'parents'      => $this->batchParentIds($batchIds),
+                    'websites'     => $this->batchWebsiteIds($batchIds),
+                    'childLinks'   => $this->batchChildLinks($batchIds),
+                    'catLinkCount' => $this->batchCategoryLinkCounts($batchIds),
+                ];
+                foreach ($collection as $product) {
+                    try {
+                        $body = $this->prepareDoc($product);
+                        $body = $this->setExtensionAttributes($body);
+                        $docs[] = ['id' => (string) $product->getId(), 'body' => $body];
+                    } catch (\Throwable $e) {
+                        $this->writeLog->writeErrorLog(
+                            'Product ID: ' . $product->getId() . ' skipped during batched indexing: ' . $e->getMessage()
+                        );
+                    }
+                    $flush($docs);
+                }
+                $this->batchCtx = null;
+            }
+
+            $flush($docs, true);
+        }
+    }
+
+    /**
+     * entity_id => type_id for a chunk, in one query — used to route composite types to the
+     * canonical path.
+     *
+     * @param int[] $productIds
+     * @return array<int, string>
+     */
+    private function fetchProductTypes(array $productIds): array
+    {
+        if (!$productIds) {
+            return [];
+        }
+        $connection = $this->productCollectionFactory->create()->getConnection();
+        $select = $connection->select()
+            ->from($connection->getTableName('catalog_product_entity'), ['entity_id', 'type_id'])
+            ->where('entity_id IN (?)', $productIds);
+        $map = [];
+        foreach ($connection->fetchAll($select) as $row) {
+            $map[(int) $row['entity_id']] = (string) $row['type_id'];
+        }
+        return $map;
+    }
+
+    /**
+     * Configurable child product ids for one parent, straight from catalog_product_super_link —
+     * the same set getUsedProducts() returns, without loading a single child product.
+     *
+     * @return int[]
+     */
+    private function getConfigurableChildIds(int $parentId): array
+    {
+        $connection = $this->productCollectionFactory->create()->getConnection();
+        return array_map('intval', $connection->fetchCol(
+            $connection->select()
+                ->from($connection->getTableName('catalog_product_super_link'), ['product_id'])
+                ->where('parent_id = ?', $parentId)
+        ));
+    }
+
+    /**
+     * Super-attribute codes for one configurable parent (e.g. color, size), from
+     * catalog_product_super_attribute → eav_attribute, in configured position order — replaces
+     * getConfigurableOptions(), which loads the full option + product-value structure.
+     *
+     * @return string[]
+     */
+    private function getConfigurableAttributeCodes(int $parentId): array
+    {
+        $connection = $this->productCollectionFactory->create()->getConnection();
+        $select = $connection->select()
+            ->from(['sa' => $connection->getTableName('catalog_product_super_attribute')], [])
+            ->join(
+                ['ea' => $connection->getTableName('eav_attribute')],
+                'ea.attribute_id = sa.attribute_id',
+                ['attribute_code']
+            )
+            ->where('sa.product_id = ?', $parentId)
+            ->order('sa.position');
+        return $connection->fetchCol($select);
+    }
+
+    /**
+     * Full cataloginventory_stock_item rows for a chunk (all columns), keyed by product id — the
+     * source for the doc's extension_attributes.stock_item, batched in one query. Uses a direct
+     * select (not the stock-item collection, which needs a resource connection not always wired
+     * in a bare CLI context) so it is robust everywhere.
+     *
+     * @param int[] $productIds
+     * @return array<int, array<string, mixed>>
+     */
+    private function getStockFullMap(array $productIds): array
+    {
+        if (!$productIds) {
+            return [];
+        }
+        $connection = $this->productCollectionFactory->create()->getConnection();
+        $select = $connection->select()
+            ->from($connection->getTableName('cataloginventory_stock_item'))
+            ->where('product_id IN (?)', $productIds)
+            ->where('stock_id = ?', 1);
+        $map = [];
+        foreach ($connection->fetchAll($select) as $row) {
+            $map[(int) $row['product_id']] = $row;
+        }
+        return $map;
+    }
+
+    /**
+     * Category names per product for a chunk — one query joining category_product to the category
+     * name attribute (store-scoped with default fallback), replacing getCategoryCollection() per
+     * product.
+     *
+     * @param int[] $productIds
+     * @return array<int, string[]>
+     */
+    private function batchCategoryNames(array $productIds, int $storeId): array
+    {
+        if (!$productIds) {
+            return [];
+        }
+        $connection = $this->productCollectionFactory->create()->getConnection();
+        $nameAttrId = (int) $connection->fetchOne(
+            $connection->select()
+                ->from($connection->getTableName('eav_attribute'), ['attribute_id'])
+                ->where('entity_type_id = (SELECT entity_type_id FROM ' . $connection->getTableName('eav_entity_type')
+                    . " WHERE entity_type_code = 'catalog_category')")
+                ->where('attribute_code = ?', 'name')
+        );
+        $cpt = $connection->getTableName('catalog_category_product');
+        $cev = $connection->getTableName('catalog_category_entity_varchar');
+        $select = $connection->select()
+            ->from(['cp' => $cpt], ['product_id'])
+            ->joinLeft(['d' => $cev], "d.entity_id = cp.category_id AND d.attribute_id = {$nameAttrId} AND d.store_id = 0", [])
+            ->joinLeft(['s' => $cev], "s.entity_id = cp.category_id AND s.attribute_id = {$nameAttrId} AND s.store_id = {$storeId}", [])
+            ->columns(['name' => new \Zend_Db_Expr('IFNULL(s.value, d.value)')])
+            ->where('cp.product_id IN (?)', $productIds)
+            ->order('cp.product_id')
+            ->order('cp.category_id');
+        $map = [];
+        foreach ($connection->fetchAll($select) as $row) {
+            if ($row['name'] !== null) {
+                $map[(int) $row['product_id']][] = (string) $row['name'];
+            }
+        }
+        return $map;
+    }
+
+    /**
+     * Canonical request_path per product for a chunk — one url_rewrite query instead of one per
+     * product. Mirrors getProductRequestPath() (metadata IS NULL, redirect_type 0, first row).
+     *
+     * @param int[] $productIds
+     * @return array<int, string>
+     */
+    private function batchRequestPaths(array $productIds, int $storeId): array
+    {
+        if (!$productIds) {
+            return [];
+        }
+        $connection = $this->productCollectionFactory->create()->getConnection();
+        $select = $connection->select()
+            ->from($connection->getTableName('url_rewrite'), ['entity_id', 'request_path', 'url_rewrite_id'])
+            ->where('entity_type = ?', 'product')
+            ->where('entity_id IN (?)', $productIds)
+            ->where('store_id = ?', $storeId)
+            ->where('metadata IS NULL')
+            ->where('redirect_type = ?', 0)
+            ->order('url_rewrite_id ASC');
+        $map = [];
+        foreach ($connection->fetchAll($select) as $row) {
+            $pid = (int) $row['entity_id'];
+            if (!isset($map[$pid]) && $row['request_path'] !== '' && $row['request_path'] !== null) {
+                $map[$pid] = (string) $row['request_path'];   // first (lowest url_rewrite_id) wins
+            }
+        }
+        return $map;
+    }
+
+    /**
+     * Parent configurable ids per simple-product id for a chunk — one query instead of
+     * getParentIdsByChild() per product.
+     *
+     * @param int[] $productIds
+     * @return array<int, int[]>
+     */
+    private function batchParentIds(array $productIds): array
+    {
+        if (!$productIds) {
+            return [];
+        }
+        $connection = $this->productCollectionFactory->create()->getConnection();
+        $select = $connection->select()
+            ->from($connection->getTableName('catalog_product_super_link'), ['product_id', 'parent_id'])
+            ->where('product_id IN (?)', $productIds);
+        $map = [];
+        foreach ($connection->fetchAll($select) as $row) {
+            $map[(int) $row['product_id']][] = (string) $row['parent_id'];
+        }
+        return $map;
+    }
+
+    /**
+     * Website ids per product for a chunk — one query instead of getWebsiteIds() per product.
+     *
+     * @param int[] $productIds
+     * @return array<int, int[]>
+     */
+    private function batchWebsiteIds(array $productIds): array
+    {
+        if (!$productIds) {
+            return [];
+        }
+        $connection = $this->productCollectionFactory->create()->getConnection();
+        $select = $connection->select()
+            ->from($connection->getTableName('catalog_product_website'), ['product_id', 'website_id'])
+            ->where('product_id IN (?)', $productIds);
+        $map = [];
+        foreach ($connection->fetchAll($select) as $row) {
+            $map[(int) $row['product_id']][] = (string) $row['website_id'];
+        }
+        return $map;
+    }
+
+    /**
+     * Configurable child product ids per PARENT id for a chunk (extension_attributes
+     * .configurable_product_links) — one super_link query instead of a type-instance call per
+     * configurable.
+     *
+     * @param int[] $parentIds
+     * @return array<int, int[]>
+     */
+    private function batchChildLinks(array $parentIds): array
+    {
+        if (!$parentIds) {
+            return [];
+        }
+        $connection = $this->productCollectionFactory->create()->getConnection();
+        $select = $connection->select()
+            ->from($connection->getTableName('catalog_product_super_link'), ['parent_id', 'product_id'])
+            ->where('parent_id IN (?)', $parentIds)
+            ->order('product_id');
+        $map = [];
+        foreach ($connection->fetchAll($select) as $row) {
+            $map[(int) $row['parent_id']][] = (int) $row['product_id'];
+        }
+        return $map;
+    }
+
+    /**
+     * Number of category assignments per product for a chunk. The per-product path's
+     * extension_attributes.category_links serialise to one empty object per assigned category
+     * ([[], [], …]); we reproduce that shape deterministically from this count.
+     *
+     * @param int[] $productIds
+     * @return array<int, int>
+     */
+    private function batchCategoryLinkCounts(array $productIds): array
+    {
+        if (!$productIds) {
+            return [];
+        }
+        $connection = $this->productCollectionFactory->create()->getConnection();
+        $select = $connection->select()
+            ->from($connection->getTableName('catalog_category_product'), ['product_id', 'c' => new \Zend_Db_Expr('COUNT(*)')])
+            ->where('product_id IN (?)', $productIds)
+            ->group('product_id');
+        $map = [];
+        foreach ($connection->fetchAll($select) as $row) {
+            $map[(int) $row['product_id']] = (int) $row['c'];
+        }
+        return $map;
+    }
+
+    /**
+     * Category ids per product for a chunk (doc category_ids, emitted as strings to match the
+     * per-product path) — one catalog_category_product query.
+     *
+     * @param int[] $productIds
+     * @return array<int, string[]>
+     */
+    private function batchCategoryIds(array $productIds): array
+    {
+        if (!$productIds) {
+            return [];
+        }
+        $connection = $this->productCollectionFactory->create()->getConnection();
+        $select = $connection->select()
+            ->from($connection->getTableName('catalog_category_product'), ['product_id', 'category_id'])
+            ->where('product_id IN (?)', $productIds)
+            ->order('category_id');
+        $map = [];
+        foreach ($connection->fetchAll($select) as $row) {
+            $map[(int) $row['product_id']][] = (string) $row['category_id'];
+        }
+        return $map;
+    }
+
+    /**
+     * Product media gallery per product for a chunk, in the exact shape the per-product Gallery
+     * ReadHandler produces ({images: {value_id: {...store/default-merged...}}, values: []}) — one
+     * three-table join for the whole chunk instead of a per-product gallery load. Store values
+     * override defaults (store 0); label/position/disabled carry both the resolved and _default.
+     *
+     * @param int[] $productIds
+     * @return array<int, array<string, mixed>>
+     */
+    private function batchMediaGallery(array $productIds, int $storeId): array
+    {
+        if (!$productIds) {
+            return [];
+        }
+        $connection = $this->productCollectionFactory->create()->getConnection();
+        $attrId = (int) $connection->fetchOne(
+            $connection->select()
+                ->from($connection->getTableName('eav_attribute'), ['attribute_id'])
+                ->where('entity_type_id = (SELECT entity_type_id FROM ' . $connection->getTableName('eav_entity_type')
+                    . " WHERE entity_type_code = 'catalog_product')")
+                ->where('attribute_code = ?', 'media_gallery')
+        );
+        $mg  = $connection->getTableName('catalog_product_entity_media_gallery');
+        $vte = $connection->getTableName('catalog_product_entity_media_gallery_value_to_entity');
+        $val = $connection->getTableName('catalog_product_entity_media_gallery_value');
+        $select = $connection->select()
+            ->from(['mg' => $mg], ['value_id', 'file' => 'value', 'media_type'])
+            ->join(['vte' => $vte], 'vte.value_id = mg.value_id', ['entity_id'])
+            ->joinLeft(['d' => $val], 'd.value_id = mg.value_id AND d.entity_id = vte.entity_id AND d.store_id = 0',
+                ['label_default' => 'label', 'position_default' => 'position', 'disabled_default' => 'disabled'])
+            ->joinLeft(['s' => $val], 's.value_id = mg.value_id AND s.entity_id = vte.entity_id AND s.store_id = ' . (int) $storeId,
+                ['s_label' => 'label', 's_position' => 'position', 's_disabled' => 'disabled'])
+            ->where('vte.entity_id IN (?)', $productIds)
+            ->where('mg.attribute_id = ?', $attrId)
+            ->order('vte.entity_id')
+            ->order(new \Zend_Db_Expr('IFNULL(d.position, 0)'))
+            ->order('mg.value_id');
+
+        $str = static fn ($v) => $v === null ? null : (string) $v;
+        $images = [];
+        foreach ($connection->fetchAll($select) as $r) {
+            $pid = (int) $r['entity_id'];
+            $vid = (string) $r['value_id'];
+            $label    = $r['s_label']    !== null ? $r['s_label']    : $r['label_default'];
+            $position = $r['s_position'] !== null ? $r['s_position'] : $r['position_default'];
+            $disabled = $r['s_disabled'] !== null ? $r['s_disabled'] : $r['disabled_default'];
+            $images[$pid][$vid] = [
+                'value_id'                  => $vid,
+                'file'                      => (string) $r['file'],
+                'media_type'                => (string) $r['media_type'],
+                'entity_id'                 => (string) $r['entity_id'],
+                'label'                     => $str($label),
+                'position'                  => $str($position),
+                'disabled'                  => $str($disabled),
+                'label_default'             => $str($r['label_default']),
+                'position_default'          => $str($r['position_default']),
+                'disabled_default'          => $str($r['disabled_default']),
+                'video_provider'            => null,
+                'video_url'                 => null,
+                'video_title'               => null,
+                'video_description'         => null,
+                'video_metadata'            => null,
+                'video_provider_default'    => null,
+                'video_url_default'         => null,
+                'video_title_default'       => null,
+                'video_description_default' => null,
+                'video_metadata_default'    => null,
+            ];
+        }
+        $out = [];
+        foreach ($images as $pid => $imgs) {
+            $out[$pid] = ['images' => $imgs, 'values' => []];
+        }
+        return $out;
+    }
+
     private function getSearchClient()
     {
         $engineCode = $this->engineResolver->getCurrentSearchEngine();
@@ -319,23 +837,38 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
             $this->logger->error('No documents to index.');
             return;
         }
+        // OpenSearch rejects a bulk body over http.max_content_length (100MB default) with a 413.
+        // A page of big configurables (hundreds/thousands of children each) can blow past that, so
+        // send in payload-size-bounded sub-batches no matter how many docs are passed in.
+        $maxBytes = 20 * 1024 * 1024; // 20MB — safely under the 100MB default
         $lines = '';
-        foreach ($docs as $doc) {
-            $lines .= json_encode(['index' => ['_id' => $doc['id'], '_index' => $indexName]]) . "\n";
-            $lines .= json_encode($doc['body']) . "\n";
-        }
-        $lines .= "\n";
-        try {
-            $response = $client->getOpenSearchClient()->bulk(['body' => $lines]);
-            if (isset($response['errors']) && $response['errors']) {
-                $this->logger->error('OpenSearch Bulk Errors: ' . json_encode($response, JSON_PRETTY_PRINT));
-            } else {
-                $this->logger->info('Bulk NDJSON Success: ' . json_encode($response, JSON_PRETTY_PRINT));
+        $bytes = 0;
+        $send = function () use (&$lines, &$bytes, $client) {
+            if ($lines === '') {
+                return;
             }
-        } catch (\Exception $e) {
-            $this->logger->error('Bulk NDJSON error: ' . $e->getMessage());
-            throw new LocalizedException(__('Bulk NDJSON error: %1', $e->getMessage()));
+            try {
+                $response = $client->getOpenSearchClient()->bulk(['body' => $lines . "\n"]);
+                if (isset($response['errors']) && $response['errors']) {
+                    $this->logger->error('OpenSearch Bulk Errors: ' . json_encode($response, JSON_PRETTY_PRINT));
+                }
+            } catch (\Exception $e) {
+                $this->logger->error('Bulk NDJSON error: ' . $e->getMessage());
+                throw new LocalizedException(__('Bulk NDJSON error: %1', $e->getMessage()));
+            }
+            $lines = '';
+            $bytes = 0;
+        };
+        foreach ($docs as $doc) {
+            $entry = json_encode(['index' => ['_id' => $doc['id'], '_index' => $indexName]]) . "\n"
+                . json_encode($doc['body']) . "\n";
+            if ($bytes > 0 && $bytes + strlen($entry) > $maxBytes) {
+                $send();
+            }
+            $lines .= $entry;
+            $bytes += strlen($entry);
         }
+        $send();
     }
 
     private function buildDynamicMapping(): array
@@ -424,16 +957,37 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
         }
         $productData['created_at'] = $this->formatDateForOpenSearch($product->getCreatedAt());
         $productData['updated_at'] = $this->formatDateForOpenSearch($product->getUpdatedAt());
-        $productData['category_names'] = $this->getCategoryNames($product);
+        $pid = (int) $product->getId();
+        $productData['category_names'] = $this->batchCtx !== null
+            ? ($this->batchCtx['categories'][$pid] ?? [])
+            : $this->getCategoryNames($product);
         // Canonical product request_path (from url_rewrite) so the shell serves grid/list URLs
         // without falling into the dynamic url_rewrite storage — the N+1 that made a page of
         // OS-served product cards explode into thousands of url_rewrite lookups.
-        $productData['request_path'] = $this->getProductRequestPath((int)$product->getId());
+        $productData['request_path'] = $this->batchCtx !== null
+            ? ($this->batchCtx['requestPaths'][$pid] ?? null)
+            : $this->getProductRequestPath($pid);
 
-        $productData['is_in_stock'] = (bool)$product->getExtensionAttributes()?->getStockItem()?->getIsInStock();
-        $productData['stock_data'] = [
-            'qty' => (float)$product->getExtensionAttributes()?->getStockItem()?->getQty()
-        ];
+        if ($this->batchCtx !== null) {
+            // Deterministic stock: reproduce every field the per-product getById path gets from
+            // its stock plugin (is_in_stock, qty, quantity_and_stock_status, is_salable) from the
+            // one batched stock query, so the doc is identical regardless of load method.
+            $st = $this->batchCtx['stock'][$pid] ?? ['qty' => 0.0, 'is_in_stock' => false];
+            $productData['is_in_stock'] = (bool) $st['is_in_stock'];
+            $productData['stock_data'] = ['qty' => (float) $st['qty']];
+            $productData['quantity_and_stock_status'] = [
+                'is_in_stock' => (bool) $st['is_in_stock'],
+                'qty' => (float) $st['qty'],
+            ];
+            $productData['is_salable'] = ($st['is_in_stock'] && (float) $st['qty'] > 0) ? 1 : 0;
+            $productData['category_ids'] = $this->batchCtx['categoryIds'][$pid] ?? [];
+            $productData['media_gallery'] = $this->batchCtx['mediaGallery'][$pid] ?? ['images' => [], 'values' => []];
+        } else {
+            $productData['is_in_stock'] = (bool)$product->getExtensionAttributes()?->getStockItem()?->getIsInStock();
+            $productData['stock_data'] = [
+                'qty' => (float)$product->getExtensionAttributes()?->getStockItem()?->getQty()
+            ];
+        }
 
         //  $productData['media_gallery'] = $this->getMediaGallery($product);
          $productData['child_products'] = $this->getChildProducts($product);
@@ -474,15 +1028,18 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
         // Merge attribute values dynamically into $productData
         $productData['attributes'] = $this->getAttributeValues($product);
         // ✅ Add Tier Prices from MySQL to OpenSearch
-        $productData['tier_prices'] = $this->getTierPrices($product);
+        $productData['tier_prices'] = $this->batchCtx !== null
+            ? ($this->batchCtx['tier'][$pid] ?? [])
+            : $this->getTierPrices($product);
 
         // ✅ Add Catalog Rule Prices from MySQL to OpenSearch, PER CUSTOMER GROUP.
         // Catalog rules are group-specific (a Wholesale rule prices differently than a guest
         // rule), so the doc carries a {group_id => rule_price} map and the read path resolves
         // the current customer group. `catalog_rule_price` is kept as the group-0 scalar for
         // backward compatibility with any code still reading it.
-        $ruleByGroup = $this->getRulePriceMapByGroup([(int)$product->getId()]);
-        $parentRuleMap = $ruleByGroup[(int)$product->getId()] ?? [];
+        $parentRuleMap = $this->batchCtx !== null
+            ? ($this->batchCtx['rule'][$pid] ?? [])
+            : ($this->getRulePriceMapByGroup([$pid])[$pid] ?? []);
         $productData['catalog_rule_prices'] = $parentRuleMap;
         $productData['catalog_rule_price'] = isset($parentRuleMap[0])
             ? ['rule_price' => (float)$parentRuleMap[0]]
@@ -490,7 +1047,9 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
 
         // ✅ Add Parent IDs for Simple Products (If Configurable)
         if ($product->getTypeId() === 'simple') {
-            $productData['parent_ids'] = $this->getParentIds($product);
+            $productData['parent_ids'] = $this->batchCtx !== null
+                ? ($this->batchCtx['parents'][$pid] ?? [])
+                : $this->getParentIds($product);
             // Rule-neutral base (see getBaseFinalPrice) so a StockSyncer reprojection triggered
             // inside a frontend request doesn't bake the shopper's catalog-rule price into the doc.
             $productData['final_price'] = $this->getBaseFinalPrice($product);
@@ -503,7 +1062,9 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
             $productData['downloadable_samples'] = $this->getDownloadableSamples($product);
         }
 
-        $productData['website_ids'] = $product->getWebsiteIds();
+        $productData['website_ids'] = $this->batchCtx !== null
+            ? ($this->batchCtx['websites'][$pid] ?? [])
+            : $product->getWebsiteIds();
         $productData['store_id'] = $product->getStoreId();
         $productData['store_ids'] = $product->getStoreIds();
 
@@ -792,21 +1353,26 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
         $childProductsArray = [];
         $configurableOptions = [];
 
+        $childIds = [];
         switch ($product->getTypeId()) {
             case Configurable::TYPE_CODE:
-                $childProducts = $product->getTypeInstance()->getUsedProducts($product);
-                $options = $product->getTypeInstance()->getConfigurableOptions($product);
-                foreach ($options as $option) {
-                    foreach ($option as $item) {
-                        if (isset($item['attribute_code']) && !in_array($item['attribute_code'], $configurableOptions)) {
-                            $configurableOptions[] = $item['attribute_code'];
-                        }
-                    }
-                }
+                // Child ids + super-attribute codes come straight from the link / super-attribute
+                // tables. getUsedProducts() and getConfigurableOptions() would each FULLY LOAD
+                // every child (hundreds–thousands, with per-child MSI/EAV) just to yield the ids
+                // and codes we re-load set-based below — the dominant cost of indexing a big
+                // configurable. The id set is identical to getUsedProducts() (verified).
+                $childIds = $this->getConfigurableChildIds((int) $product->getId());
+                $configurableOptions = $this->getConfigurableAttributeCodes((int) $product->getId());
                 break;
 
             case Grouped::TYPE_CODE:
-                $childProducts = $product->getTypeInstance()->getAssociatedProducts($product);
+                foreach ($product->getTypeInstance()->getAssociatedProducts($product) as $child) {
+                    $cid = (int) $child->getId();
+                    if ($cid) {
+                        $childIds[$cid] = $cid;
+                    }
+                }
+                $childIds = array_values($childIds);
                 break;
 
             case BundleType::TYPE_CODE:
@@ -814,27 +1380,19 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
                     $product->getTypeInstance()->getOptionsIds($product),
                     $product
                 );
-                $childProducts = iterator_to_array($selectionCollection);
+                foreach ($selectionCollection as $child) {
+                    $cid = (int) $child->getId();
+                    if ($cid) {
+                        $childIds[$cid] = $cid;
+                    }
+                }
+                $childIds = array_values($childIds);
                 break;
         }
 
-
-        if (empty($childProducts)) {
-            return $childProductsArray;
-        }
-
-        // Collect child ids from the type instance's already-resolved child list.
-        $childIds = [];
-        foreach ($childProducts as $child) {
-            $cid = (int)$child->getId();
-            if ($cid) {
-                $childIds[$cid] = $cid;
-            }
-        }
         if (!$childIds) {
             return $childProductsArray;
         }
-        $childIds = array_values($childIds);
 
         // ONE set-based collection load for ALL children (replaces a full ->load() per
         // child — the N+1 that made a 660-child configurable take ~60s to project).
