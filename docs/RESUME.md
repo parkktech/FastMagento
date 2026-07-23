@@ -4,53 +4,103 @@ Start here, then read **`docs/ARCHITECTURE.md`** (the canonical how-it-works map
 points, file responsibilities, gotchas, dormant code). `README.md` is the user-facing doc.
 `git log --oneline` tells the detailed story.
 
-## ⚠️ ACTIVE HANDOFF (2026-07-22, session 2) — READ FIRST
+## ⚠️ ACTIVE HANDOFF (2026-07-23 — verification + two production fixes) — READ FIRST
 
-**The dev site is currently pointed at the 500k SCALE DB, not prod.** `app/etc/env.php` `dbname`
-was switched `diyprod_db → diyscale_db` (backup at `app/etc/env.php.diyprod-backup`), and
-`catalog/search/opensearch_index_prefix` set to `scale` (isolated indexes `scale_products` /
-`scale_product_1`; live `magento2_*` untouched). **When benchmarking is done, restore prod:**
-`cp app/etc/env.php.diyprod-backup app/etc/env.php && php bin/magento cache:flush`.
+Re-verified every 2026-07-22 TODO against the live box, then fixed two live-store bugs surfaced
+during it. State below is measured, not assumed. **Code changes below are committed-pending — the
+subtree has NOT been re-pushed yet** (see "Pending push", bottom of this block).
 
-**A 500k reindex is running/finishing in the background** (building `scale_products`, ~518k docs).
-Verify done: `curl -s localhost:9200/scale_products/_count` (~518771) and
-`pgrep -f "indexer:reindex"`.
+### 🛠️ Fixed this session (code changes, compiled + verified)
+1. **Store-wide fatal on every OS-served product** (`generated/metadata/*.php` still referenced a
+   deleted `ParkkTech\FastMagento\Plugin\CategoryProductCollectionPlugin` — not in any di.xml).
+   Every `buildNoEavProductFromOsDoc()` instantiates a product collection → hit the dead plugin →
+   hard fatal on PDP / category / search-grid. **Fix = recompiled DI** (regenerates the plugin
+   lists from current di.xml). Verified: PDP id 1785 → HTTP 200 with real product content. This was
+   a *stale-compile* landmine, not a code bug — if PDPs ever fatal with a "Plugin class … doesn't
+   exist" report, recompile.
+2. **Search grid blanked out during reindex** (`Model/Search/InstantSearch.php`). The native
+   fulltext (matching) index and our serving index drift out of sync mid-reindex, so
+   `hydrateProducts()` silently dropped matched products missing from the serving index → "183
+   results for front, No products found." **Fix = warm-on-miss in `hydrateProducts()`**: missing
+   hits are loaded natively once (read-through-indexes them into OpenSearch via the repository
+   plugin) then re-fetched (GET-by-id is realtime in OS). Added a `mgetSource()` helper + injected
+   `ProductRepositoryInterface`. Verified: `q=front` → 12 products (was 0). Products can no longer
+   vanish from search during a reindex; it self-heals. *(Follow-up option: make the
+   `fastmagento_product` indexer blue-green/alias-based like the native fulltext one, so the serving
+   index is never partial from the read path's view — would remove the per-request native warm.)*
 
-**MySQL CLI creds:** regenerate a defaults file from env.php (`[client] host/user/password`) to run
-`mysql --defaults-extra-file=... diyscale_db`.
+### 🟢 Reindex — now running RELIABLY (was stalled)
+The 500k reindex had stalled at 238,200/518,771 (foreground run SIGHUP'd when the session closed).
+**Relaunched fully detached** (`setsid`, logged to `var/log/fastmagento-reindex.log`) so it survives
+session end — steady ~55 docs/s. This run reindexes **all three**: `fastmagento_product`,
+`fastmagento_category`, AND `catalogsearch_fulltext` (the native matching index was only 5,518 docs
+→ search only matched a tiny subset). Verify done: `tail var/log/fastmagento-reindex.log` shows
+`DONE`, `curl -s localhost:9200/scale_products/_count` ≈ 518771. **The README 500k benchmark numbers
+were captured against a partial index — re-verify after this completes.**
 
-### TODO for this fresh session (in order)
-1. **Wait for the 500k reindex to finish**, then **compile**: `bash bin/magento-compile-safe`
-   (needed for the new attribute-pagination controllers/block/plugin — production mode).
-2. **Test the paginated attribute-option manager** (new, committed, UNTESTED). Admin → Stores →
-   Attributes → Product → edit each and confirm the page opens instantly + add/edit/delete/search:
-   `color` (50k visual swatch), `size` (330 text swatch), `part_type` (1000 select),
-   `compatible_platforms` (1000 multiselect). Confirm search-by-name AND by option-id. Files under
-   `Model/AttributeOption`, `Controller/Adminhtml/AttributeOption`, `Block/Adminhtml/AttributeOption`,
-   `Plugin/Adminhtml/AttributeSaveOptionGuardPlugin`, `view/adminhtml/...`. Admin login needed.
-3. **Run the huge-vs-small benchmark** and fill the README placeholders under
-   `## 📊 Performance at scale — 500,000 products` (page-load / SQL / DOM tables, with vs without —
-   toggle the module via `bin/magento module:disable/enable ParkkTech_FastMagento`). Optionally
-   generate a chart SVG at `docs/img/scale-benchmark.svg`.
-4. **Record the 3 demo GIFs** → `docs/img/demo-{autocomplete,instant-serp,shop-by}.gif` (placeholders
-   already in README). Pipeline: Playwright screenshot sequence → `convert -delay N -loop 0
-   frames/*.png out.gif` (ImageMagick `convert` present; ffmpeg is NOT). Source: local 500k store
-   (most impressive) or live diyoffroad.com.
-5. **Finish remaining README feature hooks** — a few sections still lack the "as-seen-on-TV" hook
-   (All product types, Related/sliders, B2B pricing, Read-path resilience).
-6. **Push the tested code to the extension master**: the attribute-pagination + README work is on
-   `origin` (diy-offroad) but NOT yet on `fastmagento` master. After testing:
-   `git subtree split --prefix=app/code/ParkkTech/FastMagento -b fastmagento-sync && git push fastmagento fastmagento-sync:master`.
-7. **Then build the approved PLP OS layered navigation** (server-side, SEO-safe) — see below / ARCHITECTURE §10.
+### ⚡ Performance investigation (2026-07-23) — indexer profiling + index pack
+Profiled the indexer with `general_log` on a controlled 20-product run: **32 queries/product**,
+and **every query is already index-hit** (url_rewrite rows=1) — so the reindex is bound by query
+VOLUME + PHP hydration, **not** by missing indexes. Breakdown: ~26% **Webkul Marketplace**
+(`marketplace_userdata`, fires on every `getById` full-hydration), ~3% **Stripe**, ~47% batchable
+core EAV/stock/price loads, ~16% MSI. `productRepository->getById()` fully hydrates each product →
+every installed module's product-load plugins fire.
+- **DONE — large-catalog index pack shipped in `etc/db_schema.xml`** (auto-applies on
+  `setup:upgrade`, removed cleanly on uninstall; whitelist generated). Composite
+  `(attribute_id, store_id, value)` on `_varchar/_decimal/_datetime` (Magento already ships it on
+  `_int`; `_text` excluded). **Proven: attribute-value filter 571,866-row scan → 1-row seek.**
+  Helps storefront/layered-nav/admin on ANY large site — NOT the reindex. Applied+verified on
+  `diyscale_db`. (Replaced the earlier `docs/tools/large-catalog-indexes.sql`, now removed.)
+- **PENDING (task #10) — batched/lightweight indexer loader.** The real reindex win + the GENERAL
+  third-party fix: load a chunk set-based (id IN) and skip full per-product hydration so NO
+  third-party product-load hooks fire (helps any store, any 3rd-party module — not Webkul-specific).
+  Flag-gated + byte-level OS-doc parity vs current path before enabling. Target 32 → ~5 q/product.
 
-### What shipped this session (2026-07-22 pt2)
+### 🔴 Still open
+1. **3 demo GIFs missing → broken `<img>` on README/public master.** README references
+   `docs/img/demo-autocomplete.gif`, `demo-instant-serp.gif`, `demo-shop-by.gif`; only
+   `demo-attribute-manager.gif` exists (and it's slow — 5 frames, ~10s of pauses → re-record ~10fps).
+   User wants a **search + realtime-search** GIF specifically. Record against the full 500k store
+   after reindex (Playwright frames → `convert -delay N -loop 0 frames/*.png out.gif`; ffmpeg NOT
+   present). Admin GIF: test admin is `newadmin` / `FastMag2026!` at `/admin_3xo245`.
+2. **composer.json** — was MISSING; authored `parkktech/module-fast-magento` (valid), pending commit.
+3. **Release tag** — only `osman-master-pre-override` exists. User wants `v1.<commit-number>` on the
+   finished master after everything lands.
+
+### ⏳ Pending push (do after GIFs + benchmark re-verify)
+Commit (composer.json + InstantSearch warm-on-miss + RESUME + new GIFs + benchmark corrections),
+then subtree-split → push to `fastmagento` master, then tag `v1.<commit-number>` and push the tag.
+
+### ✅ Verified DONE (2026-07-22 work, re-checked 2026-07-23)
+- **Compile + attribute-option manager** — built, extended (assigned-to-product column, filter,
+  bulk delete, OS-served option labels) AND bug-fixed (layout alias collision, commit 6a75f2cf6);
+  running in production mode. Files present under `Model/AttributeOption`,
+  `Controller/Adminhtml/AttributeOption`, `Block/Adminhtml/AttributeOption/Manager.php`,
+  `Plugin/Adminhtml/AttributeSaveOptionGuardPlugin.php`.
+- **README** — 500k benchmark tables filled (see caveat in gap #1), full feature-hook coverage
+  pass, no remaining placeholders. Only broken links are the 3 GIFs above.
+- **Subtree push** — `fastmagento/master` root tree hash is **identical** to our extension subtree
+  (`6d136d8897…`). Fully in sync through HEAD `8f14878cb` (landed via PR #4).
+
+### Environment state right now
+- **DB still on the 500k scale DB, NOT restored to prod.** `app/etc/env.php` `dbname` =
+  `diyscale_db` (backup at `app/etc/env.php.diyprod-backup`), `opensearch_index_prefix` = `scale`
+  (isolated `scale_*` indexes; live `magento2_*` = 14,604 docs, untouched). Restore when done:
+  `cp app/etc/env.php.diyprod-backup app/etc/env.php && php bin/magento cache:flush`.
+- Production mode. **MySQL CLI creds:** regenerate a `[client]` defaults file from env.php
+  (`host/user/password`) → `mysql --defaults-extra-file=... diyscale_db`.
+
+### Next feature (unchanged — not started, correctly)
+**PLP OS layered navigation** (server-side, SEO-safe) — see below / ARCHITECTURE §10.
+
+### What shipped 2026-07-22 (session 2)
 - **Search optimization layer** (AI keywords, thesaurus, operator, symmetric synonyms, relevance) —
   see [[fastmagento-search-optimization-layer]]. **Subtree master overridden** onto our branch
   (osman archived at `archive/osman-master` + tag `osman-master-pre-override`); PR #2 obsolete.
 - **500k scale DB + generator** `docs/tools/scale-catalog.php` — see [[fastmagento-scale-testing]].
-- **Paginated attribute-option manager** (admin, committed, pending compile+test above).
+- **Paginated attribute-option manager** (admin) — verified done (see above).
 - **README** fully rewritten: story/humor, per-feature SEO sections with infomercial hooks, AI-search
-  showcase + cross-niche examples, Problem→Solution, demo-GIF + 500k-perf placeholders, badges/icons.
+  showcase + cross-niche examples, Problem→Solution, demo-GIF + 500k-perf tables, badges/icons.
 - Fast Checkout default-on; docs/ARCHITECTURE.md is the canonical map.
 
 ---

@@ -23,6 +23,20 @@ and every change is pushed into OpenSearch **in real time**. Reads stay transpar
 code (a real `Magento\Catalog\Model\Product` / `Category` object is hydrated from the index), it
 runs on **base Magento only**, and it is **Full-Page-Cache / Varnish safe**.
 
+## 🚀 Quick install
+
+```bash
+composer require parkktech/fastmagento
+bin/magento module:enable ParkkTech_FastMagento
+bin/magento setup:upgrade
+bin/magento setup:di:compile        # production mode only
+bin/magento cache:flush
+bin/magento indexer:reindex fastmagento_product fastmagento_category
+```
+
+**Requirements:** Magento 2.4.6+, PHP 8.1+, and a configured OpenSearch/Elasticsearch engine.
+Full options (VCS install before Packagist, manual install, per-indexer notes) → [**Installation**](#installation).
+
 ## Why it exists (the honest origin story)
 
 It started as one simple goal: **make Magento faster**. Then we tried to run a real store on it — a
@@ -694,16 +708,44 @@ On by default (`FastMagento > … attribute_pagination/enabled`); no configurati
 
 ## Installation
 
+**Requirements:** Magento 2.4.6+ (Open Source or Commerce), PHP 8.1+, and a configured
+**OpenSearch** (or Elasticsearch) search engine — the same engine Magento already uses for catalog
+search. No Hyvä/Breeze required; works on base Luma or any theme.
+
 **Composer (recommended)**
 ```bash
 composer require parkktech/fastmagento
+```
+Published on [Packagist](https://packagist.org/packages/parkktech/fastmagento) — the one-liner
+pulls the latest release tag. Pin a version with `parkktech/fastmagento:^1.0`, or track the tip of
+development with `parkktech/fastmagento:dev-master`.
+
+<details>
+<summary>Installing before it appears on Packagist, or from a fork</summary>
+
+The package lives at [github.com/parkktech/FastMagento](https://github.com/parkktech/FastMagento)
+(public). Add it as a VCS repository, then require it:
+```bash
+composer config repositories.parkktech-fastmagento vcs https://github.com/parkktech/FastMagento.git
+composer require parkktech/fastmagento
+```
+</details>
+
+**Then, either install path:**
+```bash
 bin/magento module:enable ParkkTech_FastMagento
 bin/magento setup:upgrade
-bin/magento setup:di:compile      # production mode
+bin/magento setup:di:compile      # production mode only
 bin/magento cache:flush
 ```
 
-**Manual**
+> ⚡ `setup:upgrade` also **auto-installs large-catalog performance indexes** (declarative schema,
+> `etc/db_schema.xml`) — composite `(attribute_id, store_id, value)` indexes on the EAV value
+> tables Magento leaves unindexed (`_varchar`, `_decimal`, `_datetime`). On a 500k catalog these
+> turn an attribute-value filter from a **571,866-row scan into a 1-row seek** (layered navigation,
+> attribute filters, admin grids). No manual SQL, and they're removed cleanly if you uninstall.
+
+**Manual (no Composer)**
 ```bash
 mkdir -p app/code/ParkkTech/FastMagento
 cp -R <module-source>/* app/code/ParkkTech/FastMagento/
