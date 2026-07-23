@@ -1395,9 +1395,16 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
         }
 
         // ONE set-based collection load for ALL children (replaces a full ->load() per
-        // child — the N+1 that made a 660-child configurable take ~60s to project).
+        // child — the N+1 that made a 660-child configurable take ~60s to project). Select only
+        // the columns the child record actually reads (display + price + stock + super-attributes)
+        // instead of every EAV attribute — a much lighter join across hundreds of children.
+        $childAttrs = array_merge(
+            ['sku', 'name', 'price', 'special_price', 'special_from_date', 'special_to_date',
+             'image', 'small_image', 'thumbnail', 'status'],
+            $configurableOptions
+        );
         $childCollection = $this->productCollectionFactory->create();
-        $childCollection->addAttributeToSelect('*')
+        $childCollection->addAttributeToSelect($childAttrs)
             ->addFieldToFilter('entity_id', ['in' => $childIds]);
         $childCollection->load();
 
