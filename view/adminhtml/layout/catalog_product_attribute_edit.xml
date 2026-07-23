@@ -12,7 +12,7 @@
         <referenceBlock name="main.swatches_text" remove="true"/>
         <referenceContainer name="main">
             <block class="ParkkTech\FastMagento\Block\Adminhtml\AttributeOption\Manager"
-                   name="fastmagento.attribute.options" as="advanced"/>
+                   name="fastmagento.attribute.options" as="paginated_options"/>
         </referenceContainer>
     </body>
 </page>
