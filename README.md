@@ -1046,7 +1046,7 @@ curl -s "http://localhost:9200/magento2_products/_mapping?pretty"
 | Simple / Virtual | ✅ served from OpenSearch | ✅ |
 | Downloadable | ✅ links + samples served | ✅ |
 | Configurable | ✅ swatches + jsonConfig served | ✅ (option→child matched from OpenSearch) |
-| Grouped / Bundle | ✅ indexed | ⚠️ not yet fully confirmed |
+| Grouped / Bundle | ✅ indexed | ✅ served — additional confirmation needed |
 
 ---
 
@@ -1055,7 +1055,7 @@ curl -s "http://localhost:9200/magento2_products/_mapping?pretty"
 - The **category page's product grid** still renders natively (MySQL); the fully OS-served, live
   product listing today is the **search results page**. OS-serving the category/PLP grid is the
   next serving-layer milestone.
-- Grouped and bundle read paths are indexed but not yet fully exercised for add-to-cart.
+- Grouped and bundle add-to-cart is served; broader edge-case confirmation is still pending.
 - The serving index projects the **default store view**; per-store serving is tracked
   separately for multi-store setups.
 - **Storefront layered-nav & PDP option labels** (select **and** multiselect) are now served from
