@@ -155,8 +155,10 @@ class PageProfiler
      */
     private function captureCheckout(string $host): array
     {
-        $sku = $this->discoverSimpleSku();
-        if ($sku === null) {
+        // Several distinct line items — tax/subscription extensions loop PER item, so one item
+        // hides the cost. This mirrors a real basket and makes the magnitude honest.
+        $skus = $this->discoverSimpleSkus(8);
+        if ($skus === []) {
             return [[], 0, false];
         }
         $base = 'http://127.0.0.1';
@@ -167,8 +169,10 @@ class PageProfiler
         if (strlen($cart) < 10) {
             return [[], 0, false];
         }
-        $item = '{"cartItem":{"sku":' . json_encode($sku) . ',"qty":2,"quote_id":' . json_encode($cart) . '}}';
-        $this->shell->execute('curl -s -o /dev/null -X POST -H %s -H %s -d %s %s', [$hHost, $hJson, $item, "$base/rest/V1/guest-carts/$cart/items"]);
+        foreach ($skus as $sku) {
+            $item = '{"cartItem":{"sku":' . json_encode($sku) . ',"qty":1,"quote_id":' . json_encode($cart) . '}}';
+            $this->shell->execute('curl -s -o /dev/null -X POST -H %s -H %s -d %s %s', [$hHost, $hJson, $item, "$base/rest/V1/guest-carts/$cart/items"]);
+        }
 
         $body = '{"addressInformation":{"address":{"country_id":"US","region_id":12,"region_code":"CA","postcode":"90001","city":"Los Angeles","street":["1 Test St"],"firstname":"T","lastname":"T","telephone":"5555550100"},"shipping_method_code":"flatrate","shipping_carrier_code":"flatrate"}}';
         $url = "$base/rest/V1/guest-carts/$cart/totals-information";
@@ -180,7 +184,8 @@ class PageProfiler
         return [$this->logParser->parse($this->root . '/var/debug/db.log'), $ttfb, true];
     }
 
-    private function discoverSimpleSku(): ?string
+    /** @return string[] up to $n distinct in-stock simple SKUs */
+    private function discoverSimpleSkus(int $n): array
     {
         $c = $this->resource->getConnection();
         $select = $c->select()
@@ -188,9 +193,8 @@ class PageProfiler
             ->join(['s' => $this->resource->getTableName('cataloginventory_stock_status')], 's.product_id = e.entity_id', [])
             ->where('e.type_id = ?', 'simple')
             ->where('s.stock_status = ?', 1)
-            ->limit(1);
-        $v = $c->fetchOne($select);
-        return $v !== false && $v !== '' ? (string) $v : null;
+            ->limit($n);
+        return array_map('strval', $c->fetchCol($select));
     }
 
     /**
@@ -202,6 +206,9 @@ class PageProfiler
      */
     private function extract(array $queries, array $page): array
     {
+        // Group per (extension · class::method). One method that loads a product touches many
+        // tables — collapse those into a single hotspot whose "loops" is how many times the method
+        // itself fired (the max over its tables), tagged with the heaviest table.
         $groups = [];
         foreach ($queries as $q) {
             $hit = $this->attributor->attribute($q['frames']);
@@ -210,7 +217,7 @@ class PageProfiler
             }
             [$class, $method] = $this->businessCaller($q['frames'], $hit);
             $table = $q['table'] ?? '(n/a)';
-            $key = $hit['module'] . '|' . $class . '|' . $method . '|' . $table;
+            $key = $hit['module'] . '|' . $class . '|' . $method;
             if (!isset($groups[$key])) {
                 $groups[$key] = [
                     'extension' => $hit['title'],
@@ -219,15 +226,25 @@ class PageProfiler
                     'page_key'  => $page['key'],
                     'class'     => $class,
                     'method'    => $method,
-                    'table'     => $table,
-                    'loops'     => 0,
+                    'tables'    => [],
                 ];
             }
-            $groups[$key]['loops']++;
+            $groups[$key]['tables'][$table] = ($groups[$key]['tables'][$table] ?? 0) + 1;
         }
 
-        // Only surface real loops (>=3 identical fires) — that's the actionable N+1 signal.
-        return array_values(array_filter($groups, static fn ($g) => $g['loops'] >= 3));
+        $out = [];
+        foreach ($groups as $g) {
+            arsort($g['tables']);
+            $loops = (int) reset($g['tables']);          // times the method fired (heaviest table)
+            if ($loops < 3) {                            // real N+1 signal only
+                continue;
+            }
+            $g['loops'] = $loops;
+            $g['table'] = (string) key($g['tables']);
+            unset($g['tables']);
+            $out[] = $g;
+        }
+        return $out;
     }
 
     /**
