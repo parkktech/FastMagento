@@ -1079,3 +1079,15 @@ curl -s "http://localhost:9200/magento2_products/_mapping?pretty"
 - `docs/tools/create-downloadable-test.php` — creates a downloadable product with multiple
   purchasable links and product-level samples to exercise the full downloadable render path.
 - `docs/tools/query-profile.sh` — DB-query profiler used to verify OpenSearch serving.
+
+---
+
+## Credits
+
+FastMagento is built and maintained by **[ParkkTech](http://parkktech.com/)**.
+
+- **Package** — [packagist.org/packages/parkktech/fastmagento](https://packagist.org/packages/parkktech/fastmagento)
+- **Source** — [github.com/parkktech/FastMagento](https://github.com/parkktech/FastMagento)
+- **Website** — [parkktech.com](http://parkktech.com/)
+
+Need Magento performance work or a custom extension? **[Talk to ParkkTech »](http://parkktech.com/)**
