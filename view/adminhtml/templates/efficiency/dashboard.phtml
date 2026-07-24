@@ -328,7 +328,7 @@ $sevClass = ['critical' => 'crit', 'warn' => 'warn', 'good' => 'good'];
                         <td class="r">
                             <form action="<?= $block->escapeUrl($block->getDismissUrl()) ?>" method="post" style="margin:0;">
                                 <?= /* @noEscape */ $block->getBlockHtml('formkey') ?>
-                                <input type="hidden" name="key" value="<?= $block->escapeHtmlAttr($block->findingKey($f)) ?>">
+                                <input type="hidden" name="fm_key" value="<?= $block->escapeHtmlAttr($block->findingKey($f)) ?>">
                                 <button type="submit" class="fm-clear" title="<?= $block->escapeHtmlAttr(__('Clear this hotspot')) ?>"><?= $block->escapeHtml(__('Clear')) ?></button>
                             </form>
                         </td>

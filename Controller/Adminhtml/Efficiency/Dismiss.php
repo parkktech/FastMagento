@@ -26,7 +26,8 @@ class Dismiss extends Action implements HttpPostActionInterface
 
     public function execute()
     {
-        $key = (string) $this->getRequest()->getParam('key', '');
+        // NB: not 'key' — the admin routes carry a /key/<secret>/ URL param of the same name.
+        $key = (string) $this->getRequest()->getParam('fm_key', '');
         if ($key !== '') {
             $this->dismissStorage->dismiss($key);
             $this->messageManager->addSuccessMessage(__('Hotspot cleared. It will stay hidden until you restore it.'));
