@@ -362,6 +362,19 @@ class ShellNoEavProduct extends CoreProduct
         return $this->doc['child_products'] ?? [];
     }
 
+    /**
+     * Always return an array of custom options. The shell skips the native load that would
+     * initialise the parent's `_options`, so it can be null — and core templates such as
+     * product/view/options.phtml call count() on it directly, which fatals under PHP 8
+     * (count(null)) on any product whose OS doc carries no options. This catalogue has no custom
+     * options, so [] is correct; a store that uses them keeps native behaviour on a serving miss.
+     */
+    public function getOptions()
+    {
+        $options = parent::getOptions();
+        return is_array($options) ? $options : [];
+    }
+
 public function getProductUrl($useSid = null)
 {
     // Return cached URL if already resolved

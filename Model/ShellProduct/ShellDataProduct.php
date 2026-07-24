@@ -254,7 +254,10 @@ class ShellDataProduct extends DataObject implements ProductInterface
 
     public function getOptions()
     {
-        return $this->doc['options'] ?? null;
+        // Native Product::getOptions() returns an array (default []). Core templates such as
+        // product/view/options.phtml call count() on it directly, so returning null here fatals
+        // under PHP 8 (count(null)) for any product whose OS doc has no options field.
+        return $this->doc['options'] ?? [];
     }
 
     public function setOptions(?array $options = null)
