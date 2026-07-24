@@ -90,12 +90,28 @@ To sync PR #6: `git subtree split --prefix=app/code/ParkkTech/FastMagento -b fas
 
 ## Next perf-fix candidates (from the latest logged-in scan, ranked) — DiyOffroad side
 
-1. **Webkul `Cart::getSectionData` ×4 (quote_address)** — customer-data endpoint, fires on **every logged-in
-   page**. `getRecentItems()` loops `getItemData()` per cart item, each resolving the quote address. Fix via a
-   memoizing preference in **Jadog_Marketplace** (medium risk — marketplace-aware minicart; do a clean
-   before/after logged-in scan). **Best next fix.**
-2. **Webkul `Context::aroundDispatch` ×3 (catalog_category_entity)** — every category page; memoize the
-   redundant category load in Jadog_Marketplace. Small, low-risk.
+1. ✅ **DONE — Webkul `Cart::getSectionData` ×4 (quote_address)** turned out to be a **Monitor false positive**,
+   not a real N+1. Verified with stacktrace db-logging: the queries are pure **core Magento** (Webkul only
+   overrides `getRecentItems`; `getSectionData` is inherited). The "×4 + writes" only appears under the Monitor's
+   **headless curl session**, which re-bootstraps the checkout quote (`Checkout\Model\Session::getQuote` →
+   collectTotals+save → quote_address INSERTs) on every hit. A **real logged-in browser** does **1 legit
+   address read, 0 writes, 0 churn** (proven via Playwright). Fixes shipped:
+   - **Monitor (→ PR #6)**: (a) `ModuleAttributor` now blames the class that *declares* a method, not a
+     subclass that inherits it (kills the whole "3rd-party rewrite owns core's method" false-positive class —
+     also fixed a stray `getIdentities` mislabelled Webkul→Mageplaza); (b) `PageProfiler` drops queries fired
+     inside the checkout-session quote bootstrap (`isCheckoutSessionBootstrap`). Re-scan: the customer_data /
+     quote_address row is gone; real findings (Webkul `Context::aroundDispatch`, Mageplaza, Jadog SD) intact.
+   - **DIY branch**: small `Jadog\Marketplace\CustomerData\Cart` preference — `isGuestCheckoutAllowed()` reuses
+     the already-memoized quote instead of re-asking the session (correct/harmless; marginal on healthy sessions).
+2. ✅ **DONE — Webkul `Context::aroundDispatch` ×3 (catalog_category_entity)** was **also a Monitor
+   false positive** (same family). The plugin only stamps `customer_id` into the http context and returns
+   `$proceed($request)` — it loads no categories. Verified by trace: 15/22 `catalog_category_entity` queries
+   on a category page had `aroundDispatch` as their **only** non-core frame = core menu/breadcrumb/layered-nav
+   loads it merely *wraps*. Fix (Monitor → PR #6): `ModuleAttributor::WRAPPER_METHODS` treats request-lifecycle
+   wrapper plugins (`around/before/afterDispatch`, `around/before/afterLaunch`) as transparent for
+   attribution — a query whose only 3rd-party frame is such a wrapper is core work, attributed to nobody.
+   Genuine callers appear deeper and still win (mega-menu `loadTree`, Jadog `BreadcrumbSchema` unaffected).
+   Re-scan: the aroundDispatch row is gone; Mageplaza + Jadog SD findings intact.
 3. **Mageplaza Productslider loops** (`toHtml` ×12 downloadable_link, `getProductParentIds` ×11,
    `getProductCollection` ×5, `getIdentities` ×5) — vendor-internal bestseller-slider render. Only fixable by
    plugin-ing/replacing Mageplaza; the lazy-load already mitigates the front-end cost.

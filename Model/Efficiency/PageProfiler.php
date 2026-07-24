@@ -367,6 +367,9 @@ class PageProfiler
         // itself fired (the max over its tables), tagged with the heaviest table.
         $groups = [];
         foreach ($queries as $q) {
+            if ($this->isCheckoutSessionBootstrap($q['frames'])) {
+                continue; // harness artifact — see isCheckoutSessionBootstrap()
+            }
             $hit = $this->attributor->attribute($q['frames']);
             if ($hit === null) {
                 continue;
@@ -415,7 +418,7 @@ class PageProfiler
     private function businessCaller(array $frames, array $hit): array
     {
         foreach ($frames as $f) {
-            $module = $this->attributor->resolveModule($f['class']);
+            $module = $this->attributor->resolveOwningModule($f['class'], $f['method']);
             if ($module === null || $this->attributor->isFirstParty($module['vendor'])) {
                 continue;
             }
@@ -424,6 +427,34 @@ class PageProfiler
             }
         }
         return [$hit['class'], $hit['method']];
+    }
+
+    /**
+     * True when a query was fired *inside* Checkout\Model\Session::getQuote() — the checkout
+     * session's per-request quote bootstrap (load → collectTotals → persist).
+     *
+     * A warm browser session hydrates the checkout quote once and reuses it across page views, so
+     * the customer-data "cart" section it pulls on every page does ~one address read and no writes.
+     * The Monitor profiles headlessly (curl, no browser), and a headless session re-bootstraps the
+     * quote on each hit — recollecting totals and re-persisting the quote (quote / quote_address /
+     * inventory_pickup_location_quote_address writes plus repeated address reads). That volume is a
+     * function of the harness, not something a real shopper hits, and it mis-attributes to whichever
+     * customer-data section source (or afterGetSectionData plugin) happens to call getQuote() first.
+     * Drop it so the endpoint reports only genuine per-render loops. Real cart/quote N+1s still
+     * surface: per-item rendering (getRecentItems → getItemData) runs *after* getQuote() returns, so
+     * those frames don't carry this signature, and the dedicated checkout-totals pass exercises the
+     * quote through webapi (no checkout session) and is unaffected.
+     *
+     * @param array<int, array{class:string, method:string}> $frames
+     */
+    private function isCheckoutSessionBootstrap(array $frames): bool
+    {
+        foreach ($frames as $f) {
+            if ($f['method'] === 'getQuote' && $f['class'] === 'Magento\\Checkout\\Model\\Session') {
+                return true;
+            }
+        }
+        return false;
     }
 
     private function storeHost(): ?string
