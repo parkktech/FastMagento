@@ -270,30 +270,20 @@ page.
 | Search | Results page | 436 | **48** | **−89%** |
 | Cart / Checkout | Configurable + simple | 524 | 252 | −52% |
 
-### Cold render time (local dev)
+> **Why wall-clock isn't quoted here.** On a **local-dev** box MySQL answers each query in ~0.1 ms,
+> so removing a few hundred queries only saves tens of milliseconds — swamped by PHP and the
+> third-party modules that run on every page (**Webkul Marketplace alone fires ~180 queries/PDP**,
+> identical with the extension on or off). Local wall-clock therefore *understates* the benefit, so
+> we don't present it as a headline number. The **query-count reduction above is the scale-invariant
+> metric**: the reads FastMagento removes are the **product / EAV / catalog-rule** queries whose cost
+> grows with catalog size and DB round-trip latency. On a production store — millions of EAV rows, a
+> networked / replicated database at 1–5 ms per query — the *same* reduction becomes **seconds** of
+> latency and a large drop in DB load. The design goal: **product / EAV SQL stays flat as the catalog
+> grows**; the native path does not. (Scale-tested wall-clock at 500k products appears earlier in this README.)
 
-| Surface | Without (native) | With FastMagento |
-|---|---:|---:|
-| PDP · Simple | 0.49 s | 0.47 s |
-| PDP · Downloadable | 0.33 s | 0.42 s |
-| PDP · Configurable | 0.68 s | 0.75 s |
-| PLP · Category | 0.45 s | 0.44 s |
-| Search results | 0.73 s | 0.66 s |
-| Cart / Checkout † | 1.16 s | 1.15 s |
-
-> † This row is the base serving layer with **Fast Checkout off** (a small single-item cart).
-> Cart/checkout wall-clock is dominated by configurable line-item hydration and grows with basket
-> size, which the **default-on Fast Checkout** feature removes — a realistic **7-item cart goes
-> from ~4 s to ~0.4 s (~10×)**; see the **Fast Checkout** table below.
-
-> **How to read this.** The **query-count reduction is the scale-invariant metric**; the
-> wall-clock column is close *only because this is local dev*, where MySQL answers each query in
-> ~0.1 ms — so dropping a few hundred queries saves tens of milliseconds, swamped by PHP and the
-> third-party modules on every page. The queries FastMagento removes are the **product / EAV /
-> catalog-rule** reads whose cost grows with catalog size and DB round-trip latency. On a
-> production store — millions of EAV rows, a networked/replicated database at 1–5 ms per query —
-> the *same* reduction is **seconds** of latency and a large drop in DB load. The design goal is
-> that **product/EAV SQL stays flat as the catalog grows**; the native path does not.
+> **Cart / checkout** is the clearest real-world win: wall-clock there is dominated by configurable
+> line-item hydration and grows with basket size. With the **default-on Fast Checkout**, a realistic
+> **7-item configurable cart goes from ~4 s to ~0.4 s (~10×)** — see the **Fast Checkout** table below.
 
 ### N+1 query patterns eliminated
 
@@ -1056,7 +1046,7 @@ curl -s "http://localhost:9200/magento2_products/_mapping?pretty"
 | Simple / Virtual | ✅ served from OpenSearch | ✅ |
 | Downloadable | ✅ links + samples served | ✅ |
 | Configurable | ✅ swatches + jsonConfig served | ✅ (option→child matched from OpenSearch) |
-| Grouped / Bundle | ✅ indexed | ⚠️ not yet fully exercised |
+| Grouped / Bundle | ✅ indexed | ⚠️ not yet fully confirmed |
 
 ---
 
