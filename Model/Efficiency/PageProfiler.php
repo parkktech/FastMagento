@@ -4,8 +4,12 @@ declare(strict_types=1);
 
 namespace ParkkTech\FastMagento\Model\Efficiency;
 
+use Magento\Customer\Api\CustomerRepositoryInterface;
+use Magento\Customer\Api\Data\CustomerInterfaceFactory;
 use Magento\Framework\App\ResourceConnection;
 use Magento\Framework\App\Filesystem\DirectoryList;
+use Magento\Framework\Encryption\EncryptorInterface;
+use Magento\Framework\Exception\NoSuchEntityException;
 use Magento\Framework\Shell;
 use Magento\Store\Model\StoreManagerInterface;
 use Psr\Log\LoggerInterface;
@@ -29,6 +33,13 @@ class PageProfiler
         '__construct', 'getAllIds', 'getItems', 'toArray', 'getColumnValues', 'loadData',
     ];
 
+    /** Dedicated, auto-provisioned customer used only to profile logged-in renders. */
+    private const PROFILER_EMAIL = 'fastmagento-efficiency@example.com';
+    private const PROFILER_PASSWORD = 'FmProfiler-2026!';
+
+    /** customer-data sections a real logged-in shopper pulls on every page — where wishlist/compare N+1s hide. */
+    private const CUSTOMER_SECTIONS = 'customer,cart,wishlist,compare-products,directory-data,last-ordered-items,persistent';
+
     private readonly string $root;
 
     public function __construct(
@@ -38,6 +49,9 @@ class PageProfiler
         private readonly DbLogParser $logParser,
         private readonly ModuleAttributor $attributor,
         private readonly StoreManagerInterface $storeManager,
+        private readonly CustomerRepositoryInterface $customerRepository,
+        private readonly CustomerInterfaceFactory $customerFactory,
+        private readonly EncryptorInterface $encryptor,
         private readonly LoggerInterface $logger
     ) {
         $this->root = $this->directoryList->getRoot();
@@ -81,8 +95,147 @@ class PageProfiler
             $this->logger->warning('FastMagento checkout profile failed: ' . $e->getMessage());
         }
 
+        // Logged-in pass — a real shopper renders per-customer-group pricing and the private
+        // customer-data sections (wishlist/compare/reorder) a guest never triggers, where a separate
+        // class of N+1s lives. Establish a session for a dedicated profiling customer and re-run the
+        // hot paths + the customer-data endpoint through it. Best-effort: any failure leaves the guest
+        // findings intact.
+        try {
+            foreach ($this->captureLoggedIn($host) as $finding) {
+                $findings[] = $finding;
+            }
+        } catch (\Throwable $e) {
+            $this->logger->warning('FastMagento logged-in profile failed: ' . $e->getMessage());
+        }
+
         usort($findings, static fn ($a, $b) => $b['loops'] <=> $a['loops']);
-        return ['findings' => array_slice($findings, 0, 30), 'page_times' => $pageTimes];
+        return ['findings' => array_slice($findings, 0, 40), 'page_times' => $pageTimes];
+    }
+
+    /**
+     * Profile the hot paths + customer-data endpoint as a logged-in customer.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function captureLoggedIn(string $host): array
+    {
+        $customerId = $this->ensureProfilerCustomer();
+        if ($customerId === null) {
+            return [];
+        }
+        $jar = $this->login($host);
+        if ($jar === null) {
+            $this->logger->warning('FastMagento logged-in profile: could not establish a customer session.');
+            return [];
+        }
+
+        $findings = [];
+        try {
+            // Same storefront hot paths, now rendered with a customer group + private blocks.
+            foreach ($this->discoverPages() as $page) {
+                if ($page['key'] === 'search') {
+                    continue; // search is group-agnostic; skip to keep the logged-in pass lean
+                }
+                try {
+                    [$queries] = $this->hit($host, $page['url'], $jar);
+                } catch (\Throwable $e) {
+                    continue;
+                }
+                $page['label'] .= ' (logged in)';
+                foreach ($this->extract($queries, $page, 'logged_in') as $f) {
+                    $findings[] = $f;
+                }
+            }
+
+            // The customer-data endpoint every logged-in page hits — wishlist/compare/reorder loops live here.
+            try {
+                [$queries] = $this->hit(
+                    $host,
+                    '/customer/section/load/?sections=' . rawurlencode(self::CUSTOMER_SECTIONS) . '&update_section_id=false',
+                    $jar
+                );
+                $section = ['key' => 'customer_data', 'label' => 'Customer data (logged in)'];
+                foreach ($this->extract($queries, $section, 'logged_in') as $f) {
+                    $findings[] = $f;
+                }
+            } catch (\Throwable $e) {
+                $this->logger->warning('FastMagento customer-data profile failed: ' . $e->getMessage());
+            }
+        } finally {
+            @unlink($jar);
+        }
+
+        return $findings;
+    }
+
+    /**
+     * Create (once) and return the id of the dedicated profiling customer. Never emails or touches a
+     * real shopper; on any failure returns null so the logged-in pass is simply skipped.
+     */
+    private function ensureProfilerCustomer(): ?int
+    {
+        try {
+            $websiteId = (int) $this->storeManager->getStore()->getWebsiteId();
+            try {
+                return (int) $this->customerRepository->get(self::PROFILER_EMAIL, $websiteId)->getId();
+            } catch (NoSuchEntityException $e) {
+                // fall through to create
+            }
+            $customer = $this->customerFactory->create();
+            $customer->setWebsiteId($websiteId);
+            $customer->setStoreId((int) $this->storeManager->getStore()->getId());
+            $customer->setEmail(self::PROFILER_EMAIL);
+            $customer->setFirstname('Efficiency');
+            $customer->setLastname('Profiler');
+            // save() with a pre-hashed password skips AccountManagement's welcome email entirely.
+            $saved = $this->customerRepository->save(
+                $customer,
+                $this->encryptor->getHash(self::PROFILER_PASSWORD, true)
+            );
+            return (int) $saved->getId();
+        } catch (\Throwable $e) {
+            $this->logger->warning('FastMagento logged-in profile: could not provision profiler customer: ' . $e->getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Log the profiling customer in over HTTP and return the path to a cookie jar carrying the
+     * session, or null if login didn't take. Mirrors a real browser login (form key from the page).
+     */
+    private function login(string $host): ?string
+    {
+        $jar = $this->root . '/var/fastmagento/efficiency-session-' . getmypid() . '.txt';
+        @unlink($jar);
+        $hHost = 'Host: ' . $host;
+
+        $html = $this->shell->execute(
+            'curl -s -m 30 -c %s -H %s %s',
+            [$jar, $hHost, 'http://127.0.0.1/customer/account/login/']
+        );
+        if (!preg_match('/name="form_key"[^>]*value="([^"]+)"/', $html, $m)) {
+            return null;
+        }
+        $this->shell->execute(
+            'curl -s -o /dev/null -m 30 -b %s -c %s -e %s --data-urlencode %s --data-urlencode %s --data-urlencode %s -H %s %s',
+            [
+                $jar, $jar, 'http://127.0.0.1/customer/account/login/',
+                'login[username]=' . self::PROFILER_EMAIL,
+                'login[password]=' . self::PROFILER_PASSWORD,
+                'form_key=' . $m[1],
+                $hHost, 'http://127.0.0.1/customer/account/loginPost/',
+            ]
+        );
+        // Confirm the session is authenticated before profiling with it.
+        $check = $this->shell->execute(
+            'curl -s -m 30 -b %s -H %s %s',
+            [$jar, $hHost, 'http://127.0.0.1/customer/section/load/?sections=customer']
+        );
+        if (!str_contains($check, self::PROFILER_EMAIL)) {
+            @unlink($jar);
+            return null;
+        }
+        return $jar;
     }
 
     /**
@@ -132,16 +285,19 @@ class PageProfiler
      *
      * @return array<int, array{sql:string, table:?string, time:float, frames:array}>
      */
-    private function hit(string $host, string $path): array
+    private function hit(string $host, string $path, ?string $cookieJar = null): array
     {
         $logPath = $this->root . '/var/debug/db.log';
         $sep = str_contains($path, '?') ? '&' : '?';
         $warm = 'http://127.0.0.1' . $path . $sep . 'fmcb=w';
         $meas = 'http://127.0.0.1' . $path . $sep . 'fmcb=m';
 
-        $this->shell->execute('curl -s -o /dev/null -m 120 -H %s %s', ['Host: ' . $host, $warm]);
+        // A logged-in hit carries the session cookie jar; a guest hit does not.
+        $cookie = $cookieJar !== null ? '-b ' . escapeshellarg($cookieJar) . ' ' : '';
+
+        $this->shell->execute("curl -s -o /dev/null -m 120 {$cookie}-H %s %s", ['Host: ' . $host, $warm]);
         @file_put_contents($logPath, '');
-        $out = $this->shell->execute('curl -s -o /dev/null -w %s -m 120 -H %s %s', ['%{time_starttransfer}', 'Host: ' . $host, $meas]);
+        $out = $this->shell->execute("curl -s -o /dev/null -w %s -m 120 {$cookie}-H %s %s", ['%{time_starttransfer}', 'Host: ' . $host, $meas]);
         $ttfb = (int) round(((float) trim($out)) * 1000);
 
         return [$this->logParser->parse($logPath), $ttfb];
@@ -204,7 +360,7 @@ class PageProfiler
      * @param array{key:string, label:string, url:string} $page
      * @return array<int, array<string, mixed>>
      */
-    private function extract(array $queries, array $page): array
+    private function extract(array $queries, array $page, string $context = 'guest'): array
     {
         // Group per (extension · class::method). One method that loads a product touches many
         // tables — collapse those into a single hotspot whose "loops" is how many times the method
@@ -224,6 +380,7 @@ class PageProfiler
                     'vendor'    => $hit['vendor'],
                     'page'      => $page['label'],
                     'page_key'  => $page['key'],
+                    'context'   => $context,
                     'class'     => $class,
                     'method'    => $method,
                     'tables'    => [],
