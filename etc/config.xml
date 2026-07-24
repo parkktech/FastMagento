@@ -135,6 +135,11 @@ xxxl, 3xl, triple xl</synonyms>
                      simple's name. Default parent = no change. -->
                 <configurable_line_name>parent</configurable_line_name>
             </cart>
+            <!-- Subtle "Powered by FastMagento" footer credit. Default on; a real visible
+                 attribution link (not hidden/cloaked). Stores can switch it off here. -->
+            <credit>
+                <show>1</show>
+            </credit>
         </fastmagento>
     </default>
 </config>

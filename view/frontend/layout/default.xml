@@ -15,7 +15,8 @@
         <referenceContainer name="footer">
             <block class="Magento\Framework\View\Element\Template"
                    name="fastmagento.credit"
-                   template="ParkkTech_FastMagento::footer-credit.phtml"/>
+                   template="ParkkTech_FastMagento::footer-credit.phtml"
+                   ifconfig="fastmagento/credit/show"/>
         </referenceContainer>
     </body>
 </page>
