@@ -232,6 +232,23 @@ class ShellNoEavProduct extends CoreProduct
     }
 
     /**
+     * The OS-served shell never loads the media_gallery_entries extension attribute (load() is a
+     * no-op), so core getMediaGalleryEntries() returns null for a shell. Magento\Swatches\Helper\
+     * Data::getProductMediaGallery() foreach's over the result, so a null 500s the
+     * swatches/ajax/media endpoint on EVERY swatch selection (Luma and Breeze alike — Breeze's
+     * swatch-renderer just surfaces it by crashing on the 500). Coalesce null -> [] so the endpoint
+     * degrades to the base image instead of erroring; if core can build entries from the doc's
+     * media_gallery they still flow through and the per-variant gallery swap works. Same null->[]
+     * guard as getOptions().
+     *
+     * @return \Magento\Catalog\Api\Data\ProductAttributeMediaGalleryEntryInterface[]
+     */
+    public function getMediaGalleryEntries()
+    {
+        return parent::getMediaGalleryEntries() ?? [];
+    }
+
+    /**
      * Regular (list) price — MUST be the base price, never the catalog-rule price. Core
      * RegularPrice::getValue() reads this for the strikethrough "old price"; returning the
      * rule price here made the discounted price show as its own "was" price. The rule is
