@@ -39,6 +39,7 @@
             <!-- Instant Search + Relevance -->
             <group id="search" translate="label" sortOrder="20" showInDefault="1" showInWebsite="1" showInStore="1">
                 <label>Instant Search &amp; Relevance</label>
+                <comment><![CDATA[Controls <strong>what a query matches and in what order</strong>. A query flows: clean (stop words) → expand (synonyms) → match (weighted fields, with the Operator &amp; Typo rules) → boost (phrase / all-terms / in-stock) → sort (custom ranking). Full breakdown with worked examples in the extension's <em>docs/SETTINGS.md</em>. Re-run <em>indexer:reindex catalogsearch_fulltext</em> after changing searchable attributes or the AI keyword layer.]]></comment>
 
                 <field id="searchable_attributes" translate="label comment" sortOrder="10" showInDefault="1" showInWebsite="1" showInStore="1">
                     <label>Searchable Attributes &amp; Weights</label>
@@ -64,9 +65,10 @@
                     <comment>Optional numeric attribute used as a secondary ranking signal after text relevance (e.g. bestseller position, rating). Blank = relevance only.</comment>
                 </field>
 
-                <field id="custom_ranking_direction" translate="label" type="select" sortOrder="50" showInDefault="1" showInWebsite="1" showInStore="1">
+                <field id="custom_ranking_direction" translate="label comment" type="select" sortOrder="50" showInDefault="1" showInWebsite="1" showInStore="1">
                     <label>Custom Ranking Direction</label>
                     <source_model>ParkkTech\FastMagento\Model\Config\Source\RankingDirection</source_model>
+                    <comment><![CDATA[Only applies when a Custom Ranking Attribute is set above. <em>Highest first</em> for bestseller rank / rating / popularity; <em>Lowest first</em> for price-low or "position" fields. Products missing the attribute always sort last (never dropped).]]></comment>
                 </field>
 
                 <field id="synonyms" translate="label comment" type="textarea" sortOrder="60" showInDefault="1" showInWebsite="1" showInStore="1">

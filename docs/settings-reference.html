@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FastMagento — Settings Reference</title>
+<meta name="description" content="Every FastMagento admin setting explained, with examples — indexing, instant search &amp; relevance, AI assistant, fast checkout, cache and the efficiency monitor.">
+<style>
+  .fm-toggle{position:fixed;top:14px;right:14px;z-index:50;display:inline-flex;align-items:center;gap:7px;
+    font-family:system-ui,sans-serif;font-size:13px;font-weight:600;cursor:pointer;
+    background:var(--surface);color:var(--ink-soft);border:1px solid var(--border);border-radius:999px;padding:7px 13px;
+    box-shadow:var(--shadow)}
+  .fm-toggle:hover{border-color:var(--border-strong)}
+  .fm-toggle svg{width:15px;height:15px}
+</style>
+</head>
+<body>
+<button class="fm-toggle" id="fmThemeToggle" aria-label="Toggle light or dark theme">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v2M12 19v2M5 12H3M21 12h-2M6 6l1.5 1.5M16.5 16.5L18 18M18 6l-1.5 1.5M7.5 16.5L6 18"/><circle cx="12" cy="12" r="4"/></svg>
+  <span id="fmThemeLabel">Theme</span>
+</button>
+<style>
+  :root{
+    --bg:#f4f6fb; --surface:#ffffff; --surface-2:#fbfcfe; --ink:#1a2233; --ink-soft:#475569;
+    --muted:#64748b; --border:#e6eaf1; --border-strong:#d4dae6;
+    --brand:#0f766e; --brand-ink:#0a5850; --brand-soft:#e3f2ef;
+    --ok:#0f9d6b; --ok-soft:#e6f7ef; --info:#2b74d6; --info-soft:#e8f1fd;
+    --warn:#b7791f; --warn-soft:#fdf4e3; --danger:#d33d51; --danger-soft:#fde9ec;
+    --mono:ui-monospace,"SF Mono","JetBrains Mono","Cascadia Code",Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --shadow:0 1px 2px rgba(16,24,40,.04),0 4px 16px rgba(16,24,40,.06);
+    --shadow-lg:0 8px 30px rgba(16,24,40,.10);
+    --radius:16px;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --bg:#0c1120; --surface:#141b2d; --surface-2:#111827; --ink:#e8edf7; --ink-soft:#c2cbdd;
+      --muted:#8b97ad; --border:#25304a; --border-strong:#334063;
+      --brand:#8b8bff; --brand-ink:#b3b3ff; --brand-soft:#1c2140;
+      --ok:#39d39b; --ok-soft:#10241d; --info:#6ba8ff; --info-soft:#111f36;
+      --warn:#e5b567; --warn-soft:#2a2213; --danger:#ff8090; --danger-soft:#2c141a;
+      --shadow:0 1px 2px rgba(0,0,0,.3),0 6px 20px rgba(0,0,0,.35);
+      --shadow-lg:0 12px 40px rgba(0,0,0,.5);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0c1120; --surface:#141b2d; --surface-2:#111827; --ink:#e8edf7; --ink-soft:#c2cbdd;
+    --muted:#8b97ad; --border:#25304a; --border-strong:#334063;
+    --brand:#4fd1c5; --brand-ink:#7fe3d9; --brand-soft:#0e2b28;
+    --ok:#39d39b; --ok-soft:#10241d; --info:#6ba8ff; --info-soft:#111f36;
+    --warn:#e5b567; --warn-soft:#2a2213; --danger:#ff8090; --danger-soft:#2c141a;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 6px 20px rgba(0,0,0,.35);
+    --shadow-lg:0 12px 40px rgba(0,0,0,.5);
+  }
+  :root[data-theme="light"]{
+    --bg:#f4f6fb; --surface:#ffffff; --surface-2:#fbfcfe; --ink:#1a2233; --ink-soft:#475569;
+    --muted:#64748b; --border:#e6eaf1; --border-strong:#d4dae6;
+    --brand:#0f766e; --brand-ink:#0a5850; --brand-soft:#e3f2ef;
+    --ok:#0f9d6b; --ok-soft:#e6f7ef; --info:#2b74d6; --info-soft:#e8f1fd;
+    --warn:#b7791f; --warn-soft:#fdf4e3; --danger:#d33d51; --danger-soft:#fde9ec;
+    --shadow:0 1px 2px rgba(16,24,40,.04),0 4px 16px rgba(16,24,40,.06);
+    --shadow-lg:0 8px 30px rgba(16,24,40,.10);
+  }
+
+  *{box-sizing:border-box}
+  body{margin:0}
+  .fm{font-family:var(--sans);color:var(--ink);background:var(--bg);line-height:1.6;
+    font-size:16px;-webkit-font-smoothing:antialiased}
+  .fm h1,.fm h2,.fm h3,.fm h4{line-height:1.25;letter-spacing:-.01em;margin:0}
+  .fm a{color:var(--brand-ink);text-decoration:none}
+  .fm a:hover{text-decoration:underline}
+  .fm code,.fm kbd{font-family:var(--mono);font-size:.86em}
+
+  .wrap{max-width:1240px;margin:0 auto;padding:0 24px}
+  .layout{display:grid;grid-template-columns:260px minmax(0,1fr);gap:40px;align-items:start}
+  @media(max-width:980px){.layout{grid-template-columns:1fr;gap:8px}}
+
+  /* ---- Hero ---- */
+  .hero{background:
+      radial-gradient(1200px 380px at 12% -10%,var(--brand-soft),transparent 60%),
+      linear-gradient(180deg,var(--surface),var(--bg));
+    border-bottom:1px solid var(--border)}
+  .hero-inner{padding:56px 0 40px}
+  .eyebrow{display:inline-flex;align-items:center;gap:8px;font-family:var(--mono);font-size:12.5px;
+    letter-spacing:.06em;text-transform:uppercase;color:var(--brand-ink);background:var(--brand-soft);
+    border:1px solid var(--border);padding:6px 12px;border-radius:999px;font-weight:600}
+  .hero h1{font-size:clamp(30px,5vw,46px);font-weight:800;margin:18px 0 12px}
+  .hero p.lede{font-size:clamp(16px,2.4vw,19px);color:var(--ink-soft);max-width:70ch;margin:0}
+  .hero-meta{display:flex;flex-wrap:wrap;gap:10px;margin-top:22px}
+  .chip{display:inline-flex;align-items:center;gap:7px;font-size:13px;font-weight:600;color:var(--ink-soft);
+    background:var(--surface);border:1px solid var(--border);border-radius:999px;padding:6px 13px}
+  .chip svg{width:15px;height:15px;flex:none}
+
+  /* ---- TOC ---- */
+  .toc{position:sticky;top:16px;background:var(--surface);border:1px solid var(--border);
+    border-radius:var(--radius);padding:16px;box-shadow:var(--shadow)}
+  @media(max-width:980px){.toc{position:static;margin:12px 0}}
+  .toc h4{font-size:12px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin:2px 0 10px 8px}
+  .toc a{display:flex;gap:10px;align-items:center;padding:8px 10px;border-radius:10px;color:var(--ink-soft);
+    font-size:14.5px;font-weight:500}
+  .toc a:hover{background:var(--brand-soft);color:var(--brand-ink);text-decoration:none}
+  .toc a .n{font-family:var(--mono);font-size:12px;color:var(--muted);width:20px;flex:none;text-align:right}
+
+  /* ---- Sections ---- */
+  main{padding:40px 0 80px}
+  .section{margin:0 0 40px;scroll-margin-top:16px}
+  .sec-head{display:flex;align-items:center;gap:14px;margin:0 0 6px}
+  .sec-ic{width:40px;height:40px;flex:none;border-radius:11px;display:grid;place-items:center;
+    background:var(--brand-soft);color:var(--brand-ink);border:1px solid var(--border)}
+  .sec-ic svg{width:22px;height:22px}
+  .sec-head h2{font-size:24px;font-weight:800}
+  .sec-sub{color:var(--muted);margin:2px 0 22px;font-size:15px;max-width:80ch}
+  .path-root{font-family:var(--mono);font-size:12.5px;color:var(--muted)}
+
+  /* ---- Setting card ---- */
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+    box-shadow:var(--shadow);padding:22px 24px;margin:0 0 18px;transition:box-shadow .2s,transform .2s,border-color .2s}
+  .card:hover{box-shadow:var(--shadow-lg);border-color:var(--border-strong)}
+  .card-top{display:flex;flex-wrap:wrap;align-items:baseline;gap:10px 14px;margin-bottom:4px}
+  .card-top h3{font-size:18px;font-weight:700}
+  .badges{display:flex;flex-wrap:wrap;gap:7px;margin-left:auto}
+  .b{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:700;letter-spacing:.02em;
+    padding:3px 9px;border-radius:7px;border:1px solid var(--border);white-space:nowrap}
+  .b-type{background:var(--surface-2);color:var(--ink-soft)}
+  .b-def{background:var(--ok-soft);color:var(--ok);border-color:transparent}
+  .b-scope{background:var(--surface-2);color:var(--muted)}
+  .b-new{background:var(--brand-soft);color:var(--brand-ink);border-color:transparent}
+  .pathline{font-family:var(--mono);font-size:12.5px;color:var(--brand-ink);background:var(--brand-soft);
+    display:inline-block;padding:3px 9px;border-radius:7px;margin:8px 0 12px;border:1px solid var(--border);word-break:break-all}
+  .card p{margin:0 0 10px;color:var(--ink-soft)}
+  .card p:last-child{margin-bottom:0}
+  .card .lead{color:var(--ink);font-weight:500}
+  .kv{margin:12px 0 0;border-top:1px dashed var(--border);padding-top:12px}
+  .kv .row{display:flex;gap:10px;font-size:14.5px;padding:3px 0}
+  .kv .k{color:var(--muted);min-width:104px;flex:none;font-weight:600}
+  .opts{display:flex;flex-direction:column;gap:8px;margin:12px 0 4px}
+  .opt{display:flex;gap:11px;align-items:flex-start;background:var(--surface-2);border:1px solid var(--border);
+    border-radius:11px;padding:11px 13px}
+  .opt .tag{font-family:var(--mono);font-size:12px;font-weight:700;color:var(--brand-ink);background:var(--brand-soft);
+    border-radius:6px;padding:2px 8px;flex:none;margin-top:1px}
+  .opt .txt{font-size:14.5px;color:var(--ink-soft)}
+  .opt.is-default{border-color:var(--ok);box-shadow:inset 3px 0 0 var(--ok)}
+
+  /* ---- Callouts ---- */
+  .call{display:flex;gap:12px;border-radius:12px;padding:13px 15px;margin:14px 0 4px;font-size:14.5px;
+    border:1px solid var(--border)}
+  .call svg{width:19px;height:19px;flex:none;margin-top:1px}
+  .call .ct{color:var(--ink-soft)}
+  .call b{color:var(--ink)}
+  .call-tip{background:var(--ok-soft)}.call-tip svg{color:var(--ok)}
+  .call-info{background:var(--info-soft)}.call-info svg{color:var(--info)}
+  .call-warn{background:var(--warn-soft)}.call-warn svg{color:var(--warn)}
+  .call-danger{background:var(--danger-soft)}.call-danger svg{color:var(--danger)}
+
+  code.inl{background:var(--surface-2);border:1px solid var(--border);border-radius:6px;padding:1px 6px;color:var(--ink)}
+  .ex{background:var(--surface-2);border:1px solid var(--border);border-left:3px solid var(--brand);
+    border-radius:10px;padding:12px 15px;margin:12px 0 4px;font-size:14.5px}
+  .ex .lbl{font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);
+    display:block;margin-bottom:6px}
+  .ex code{color:var(--ink)}
+
+  /* ---- Recipes ---- */
+  .recipes{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px;margin:8px 0 4px}
+  .recipe{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px 18px 16px;
+    box-shadow:var(--shadow)}
+  .recipe h4{font-size:15.5px;font-weight:700;margin-bottom:8px;display:flex;gap:9px;align-items:center}
+  .recipe h4 svg{width:18px;height:18px;color:var(--brand);flex:none}
+  .recipe p{font-size:14px;color:var(--ink-soft);margin:0 0 10px}
+  .recipe .set{font-family:var(--mono);font-size:12.5px;color:var(--ink-soft);background:var(--surface-2);
+    border:1px solid var(--border);border-radius:8px;padding:8px 10px;display:block}
+  .recipe .set b{color:var(--brand-ink)}
+
+  /* ---- Pipeline diagram ---- */
+  .pipe{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+    padding:22px;box-shadow:var(--shadow);margin:6px 0 8px;overflow-x:auto}
+  .pipe-row{display:flex;align-items:stretch;gap:0;min-width:640px}
+  .stage{flex:1;min-width:120px;text-align:center;position:relative;padding:0 6px}
+  .stage .bubble{background:var(--surface-2);border:1px solid var(--border-strong);border-radius:12px;
+    padding:12px 8px;height:100%}
+  .stage .st{font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--brand-ink)}
+  .stage .sd{font-size:12.5px;color:var(--ink-soft);margin-top:5px}
+  .stage .eg{font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:7px;display:block}
+  .arrow{align-self:center;color:var(--muted);flex:none;padding:0 2px}
+  .arrow svg{width:20px;height:20px}
+
+  table.mini{width:100%;border-collapse:collapse;margin:12px 0 4px;font-size:14px}
+  table.mini th,table.mini td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--border);vertical-align:top}
+  table.mini th{font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:700}
+  table.mini tr:last-child td{border-bottom:none}
+  table.mini td code{background:var(--surface-2);border:1px solid var(--border);border-radius:5px;padding:1px 6px}
+
+  .divider{height:1px;background:var(--border);margin:36px 0}
+  footer.fm-foot{border-top:1px solid var(--border);background:var(--surface);padding:34px 0 60px;color:var(--muted);font-size:14px}
+  footer.fm-foot h4{color:var(--ink);font-size:15px;margin-bottom:12px}
+  .cheat{font-family:var(--mono);font-size:12.5px;background:var(--surface-2);border:1px solid var(--border);
+    border-radius:10px;padding:14px 16px;overflow-x:auto;color:var(--ink-soft);line-height:1.9}
+  .cheat b{color:var(--brand-ink)}
+</style>
+
+<div class="fm">
+
+<!-- ======================= HERO ======================= -->
+<header class="hero">
+  <div class="wrap hero-inner">
+    <span class="eyebrow">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z" stroke-linejoin="round"/></svg>
+      FastMagento · Configuration
+    </span>
+    <h1>Settings Reference</h1>
+    <p class="lede">Every FastMagento setting, what it actually does, and how to tune it — with worked
+      examples. The search &amp; relevance controls are broken down clause-by-clause so you can dial in
+      the results you want without guessing.</p>
+    <div class="hero-meta">
+      <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h10"/></svg> Stores &gt; Configuration &gt; FastMagento</span>
+      <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg> Reindex after search-attribute changes</span>
+      <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l8 4v5c0 4.4-3.1 7.9-8 9-4.9-1.1-8-4.6-8-9V7l8-4z"/></svg> Safe defaults · degrades to native</span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+<div class="layout">
+
+  <!-- ======================= TOC ======================= -->
+  <nav class="toc" aria-label="Contents">
+    <h4>On this page</h4>
+    <a href="#read"><span class="n">–</span> How to read this</a>
+    <a href="#recipes"><span class="n">–</span> Quick-start recipes</a>
+    <a href="#indexing"><span class="n">1</span> Indexing</a>
+    <a href="#search"><span class="n">2</span> Search &amp; Relevance</a>
+    <a href="#ai"><span class="n">3</span> AI Assistant</a>
+    <a href="#cart"><span class="n">4</span> Fast Checkout</a>
+    <a href="#cache"><span class="n">5</span> Cache Warmup</a>
+    <a href="#efficiency"><span class="n">6</span> Efficiency Monitor</a>
+    <a href="#advanced"><span class="n">7</span> Advanced (config-only)</a>
+    <a href="#cheat"><span class="n">–</span> Paths &amp; CLI cheat-sheet</a>
+  </nav>
+
+  <main>
+
+    <!-- ============== HOW TO READ ============== -->
+    <section class="section" id="read">
+      <div class="sec-head">
+        <span class="sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5h16v14H4z"/><path d="M8 9h8M8 13h5"/></svg></span>
+        <h2>How to read this</h2>
+      </div>
+      <p class="sec-sub">Every setting is a card. The badges tell you the field type, its shipped default,
+        and how far down the store hierarchy you can override it. Config paths are shown so you can also
+        set them from <code class="inl">app/etc/config.php</code>, <code class="inl">env.php</code>, or
+        <code class="inl">bin/magento config:set</code>.</p>
+      <div class="card">
+        <div class="card-top"><h3>Legend</h3></div>
+        <div class="kv" style="border-top:none;padding-top:4px">
+          <div class="row"><span class="k"><span class="b b-type">Yes / No</span></span><span>Field type — a toggle, text box, number, dropdown, or textarea.</span></div>
+          <div class="row"><span class="k"><span class="b b-def">Default: 1</span></span><span>The value FastMagento ships with, out of the box.</span></div>
+          <div class="row"><span class="k"><span class="b b-scope">Store-level</span></span><span>Can be overridden per website / store view. <span class="b b-scope">Global only</span> = one value site-wide.</span></div>
+          <div class="row"><span class="k"><code class="inl">path/here</code></span><span>The config path — set it in the admin, or via CLI / env for automation.</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============== RECIPES ============== -->
+    <section class="section" id="recipes">
+      <div class="sec-head">
+        <span class="sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v3M5 8h14l-1.5 11.5A2 2 0 0115.5 21h-7A2 2 0 016.5 19.5L5 8z"/></svg></span>
+        <h2>Quick-start recipes</h2>
+      </div>
+      <p class="sec-sub">Common goals and the exact knobs that get you there. Each is explained in full below.</p>
+      <div class="recipes">
+        <div class="recipe">
+          <h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg> "Frontend UTV" shouldn't return frontend-only parts</h4>
+          <p>Require more of the words to match so loosely-related items drop out.</p>
+          <span class="set">Multi-Term Operator → <b>All</b> or <b>Most</b></span>
+        </div>
+        <div class="recipe">
+          <h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l2.4 7.4H22l-6 4.6 2.3 7.4-6.3-4.6L5.7 21 8 14 2 9.4h7.6z"/></svg> Surface products for buyer slang</h4>
+          <p>Let a "UTV" part show up for "side-by-side / SxS" even if the copy never says it.</p>
+          <span class="set">Synonyms + <b>AI Search Keywords</b></span>
+        </div>
+        <div class="recipe">
+          <h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z" stroke-linejoin="round"/></svg> Cut the checkout delay on configurables</h4>
+          <p>Serve cart/checkout lines from the index instead of the ~217-query native path.</p>
+          <span class="set">Enable Fast Checkout → <b>Yes</b> (default)</span>
+        </div>
+        <div class="recipe">
+          <h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 17l6-6 4 4 6-6"/><path d="M14 5h6v6"/></svg> Rank best-sellers above the rest</h4>
+          <p>Keep text relevance first, then break ties by a numeric attribute you choose.</p>
+          <span class="set">Custom Ranking Attribute → <b>bestseller_score</b></span>
+        </div>
+      </div>
+    </section>
+
+    <div class="divider"></div>
+
+    <!-- ============== 1. INDEXING ============== -->
+    <section class="section" id="indexing">
+      <div class="sec-head">
+        <span class="sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg></span>
+        <h2>1 · Indexing Configuration</h2>
+      </div>
+      <p class="sec-sub"><span class="path-root">fastmagento/indexing/*</span> &nbsp;·&nbsp; Names the OpenSearch indexes FastMagento reads and writes. Most stores never change these.</p>
+
+      <div class="call call-info" style="margin-bottom:20px">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8h.01M11 12h1v4h1"/></svg>
+        <span class="ct"><b>Real-time vs. scheduled indexing is not set here.</b> That's controlled by Magento's own
+          <b>System &gt; Index Management</b> ("Update on Save" / "Update by Schedule"), because FastMagento's
+          indexers run off Magento's native mview.</span>
+      </div>
+
+      <div class="card">
+        <div class="card-top">
+          <h3>Product Index Suffix</h3>
+          <div class="badges"><span class="b b-type">Text</span><span class="b b-def">Default: products</span><span class="b b-scope">Store-level</span></div>
+        </div>
+        <span class="pathline">fastmagento/indexing/opensearch_index_prefix</span>
+        <p class="lead">The suffix for FastMagento's product index. The full index name is the engine prefix joined to this suffix.</p>
+        <div class="ex"><span class="lbl">Resulting index name</span>
+          <code>&lt;catalog/search/opensearch_index_prefix&gt;_&lt;suffix&gt;</code> → e.g. <code>magento2_products</code></div>
+        <div class="call call-warn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l9 16H3z"/><path d="M12 9v4M12 17h.01"/></svg>
+          <span class="ct">Only change this to run parallel indexes (e.g. blue/green). After changing it, <b>reindex</b> so the new index is populated.</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-top">
+          <h3>Category Index Suffix</h3>
+          <div class="badges"><span class="b b-type">Text</span><span class="b b-def">Default: categories</span><span class="b b-scope">Store-level</span></div>
+        </div>
+        <span class="pathline">fastmagento/indexing/opensearch_category_index_prefix</span>
+        <p class="lead">Same idea for the category index that powers menus, breadcrumbs and layered-nav attributes.</p>
+        <div class="ex"><span class="lbl">Resulting index name</span><code>magento2_categories</code></div>
+      </div>
+    </section>
+
+    <div class="divider"></div>
+
+    <!-- ============== 2. SEARCH ============== -->
+    <section class="section" id="search">
+      <div class="sec-head">
+        <span class="sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg></span>
+        <h2>2 · Instant Search &amp; Relevance</h2>
+      </div>
+      <p class="sec-sub"><span class="path-root">fastmagento/search/*</span> &nbsp;·&nbsp; The knobs that decide <em>which</em> products a query returns and <em>in what order</em>. This is the section most stores need to understand — so it starts with how a query actually flows, then documents each control.</p>
+
+      <!-- Pipeline -->
+      <h3 style="font-size:16px;margin:0 0 10px">How one search query flows</h3>
+      <div class="pipe">
+        <div class="pipe-row">
+          <div class="stage"><div class="bubble"><div class="st">1 · Clean</div><div class="sd">Lower-case, strip <b>Stop Words</b></div><span class="eg">"the front end" → "front end"</span></div></div>
+          <div class="arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></div>
+          <div class="stage"><div class="bubble"><div class="st">2 · Expand</div><div class="sd">Add <b>Synonym</b> variants (equal weight)</div><span class="eg">+ "frontend", "sxs", "utv"</span></div></div>
+          <div class="arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></div>
+          <div class="stage"><div class="bubble"><div class="st">3 · Match</div><div class="sd">Per candidate: prefix + words + phrase, across weighted fields, with <b>Operator</b> &amp; <b>Typo</b> rules</div><span class="eg">name^5 sku^6 …</span></div></div>
+          <div class="arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></div>
+          <div class="stage"><div class="bubble"><div class="st">4 · Boost</div><div class="sd"><b>Phrase</b> &amp; all-terms boosts, then <b>In-stock</b> nudge</div><span class="eg">×4 phrase · ×1.6 in-stock</span></div></div>
+          <div class="arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></div>
+          <div class="stage"><div class="bubble"><div class="st">5 · Sort</div><div class="sd">By score, then your <b>Custom Ranking</b> tie-breaker</div><span class="eg">_score → bestseller</span></div></div>
+        </div>
+      </div>
+      <div class="call call-tip" style="margin-bottom:24px">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg>
+        <span class="ct"><b>Mental model:</b> stages 1–2 decide <em>what counts as the query</em>, stage 3 decides <em>what matches</em>, and stages 4–5 decide <em>the order</em>. When results feel wrong, find the stage responsible below.</span>
+      </div>
+
+      <!-- Searchable attributes -->
+      <div class="card">
+        <div class="card-top">
+          <h3>Searchable Attributes &amp; Weights</h3>
+          <div class="badges"><span class="b b-type">Grid</span><span class="b b-def">Default: name·5, sku·6, short_description·1, description·1</span><span class="b b-scope">Store-level</span></div>
+        </div>
+        <span class="pathline">fastmagento/search/searchable_attributes</span>
+        <p class="lead">Which product fields are searched, and how strongly each one counts. Higher weight = a hit there ranks higher. One place to control what Magento otherwise buries in each attribute's "Search Weight".</p>
+        <p>Leave it empty to use the built-in defaults. Add a row per attribute you want searched; the weight becomes the field boost (<code class="inl">name^5</code>) in every match clause.</p>
+        <div class="ex"><span class="lbl">Example</span>
+          <code>name · 5 &nbsp; | &nbsp; sku · 6 &nbsp; | &nbsp; part_type · 3 &nbsp; | &nbsp; description · 1</code><br>
+          A query hitting the SKU or name outranks one that only appears in the description.</div>
+        <div class="call call-warn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l9 16H3z"/><path d="M12 9v4M12 17h.01"/></svg>
+          <span class="ct">Attributes must be present in the search index. After changing this list, run <code class="inl">indexer:reindex catalogsearch_fulltext</code>.</span>
+        </div>
+      </div>
+
+      <!-- Operator -->
+      <div class="card">
+        <div class="card-top">
+          <h3>Multi-Term Operator</h3>
+          <div class="badges"><span class="b b-type">Select</span><span class="b b-def">Default: Any</span><span class="b b-scope">Store-level</span></div>
+        </div>
+        <span class="pathline">fastmagento/search/search_operator</span>
+        <p class="lead">How multiple typed words combine. This is the single biggest lever on "too many vs. too few results".</p>
+        <div class="opts">
+          <div class="opt is-default"><span class="tag">Any</span><span class="txt"><b>OR — broadest.</b> One matching word is enough. Most results, loosest. <em>(default)</em></span></div>
+          <div class="opt"><span class="tag">Most</span><span class="txt"><b>75% must match — balanced.</b> A good middle ground for 3+ word queries.</span></div>
+          <div class="opt"><span class="tag">All</span><span class="txt"><b>AND — strictest.</b> Every word must match. Fewest, most precise results.</span></div>
+        </div>
+        <div class="ex"><span class="lbl">Worked example — query "Frontend UTV"</span>
+          <b>Any:</b> returns anything that says <code>frontend</code> <u>or</u> <code>UTV</code> — so generic frontend parts leak in.<br>
+          <b>All:</b> returns only products matching <code>frontend</code> <u>and</u> <code>UTV</code> — the intended UTV front-end parts.</div>
+        <div class="call call-info">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8h.01M11 12h1v4h1"/></svg>
+          <span class="ct">Terms may be spread across name, keywords <em>and</em> description (cross-field) — "All" doesn't force every word into one field.</span>
+        </div>
+      </div>
+
+      <!-- Typo -->
+      <div class="card">
+        <div class="card-top">
+          <h3>Typo Tolerance</h3>
+          <div class="badges"><span class="b b-type">Yes / No</span><span class="b b-def">Default: Yes</span><span class="b b-scope">Store-level</span></div>
+        </div>
+        <span class="pathline">fastmagento/search/typo_tolerance</span>
+        <p class="lead">Fuzzy matching so misspellings still find results (the OpenSearch equivalent of Algolia typo tolerance).</p>
+        <div class="ex"><span class="lbl">Example</span><code>"contol arm" → still finds "control arm"</code> &nbsp; · &nbsp; <code>"suspention" → "suspension"</code></div>
+        <div class="call call-info"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8h.01M11 12h1v4h1"/></svg><span class="ct">Applied to the as-you-type match with <code class="inl">fuzziness: AUTO</code> (edit distance scales with word length). Turn off only if fuzzy matches are pulling in noise on very short SKUs.</span></div>
+      </div>
+
+      <!-- Phrase boost -->
+      <div class="card">
+        <div class="card-top">
+          <h3>Exact / Phrase Match Boost</h3>
+          <div class="badges"><span class="b b-type">Number</span><span class="b b-def">Default: 4</span><span class="b b-scope">Store-level</span></div>
+        </div>
+        <span class="pathline">fastmagento/search/phrase_match_boost</span>
+        <p class="lead">How hard to rank products where the query appears as a <em>contiguous phrase</em> (in name / keywords) above products where the same words are just scattered around. <code class="inl">0</code> disables it.</p>
+        <div class="ex"><span class="lbl">Worked example — query "rock slider"</span>
+          A product named <code>Rock Slider Kit</code> (exact phrase) is boosted <b>×4</b> over one whose description happens to contain "rock" and "slider" in different sentences.</div>
+        <div class="kv">
+          <div class="row"><span class="k">Higher (6–8)</span><span>Exact phrasing wins harder — good when product names are clean and descriptive.</span></div>
+          <div class="row"><span class="k">Lower (1–2)</span><span>Softer — lets strong scattered-word matches compete.</span></div>
+          <div class="row"><span class="k">0</span><span>No phrase preference at all.</span></div>
+        </div>
+        <div class="call call-info"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8h.01M11 12h1v4h1"/></svg><span class="ct">This value also feeds the "all-terms" precision boost (≈75% of it), so raising it tightens phrase <em>and</em> full-coverage ranking together.</span></div>
+      </div>
+
+      <!-- Synonyms -->
+      <div class="card">
+        <div class="card-top">
+          <h3>Synonyms / Thesaurus</h3>
+          <div class="badges"><span class="b b-type">Textarea</span><span class="b b-def">Pre-populated</span><span class="b b-scope">Store-level</span></div>
+        </div>
+        <span class="pathline">fastmagento/search/synonyms</span>
+        <p class="lead">One equivalence group per line, comma-separated. A search for <em>any</em> term in a group also matches the others — and they're scored <em>identically</em>, so "frontend" and "front end" return the same results in the same order.</p>
+        <div class="ex"><span class="lbl">Format — one group per line</span>
+          <code>sxs, utv</code><br><code>a-arm, a arm, control arm, control-arm</code><br><code>shock, damper, coilover</code></div>
+        <div class="call call-warn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l9 16H3z"/><path d="M12 9v4M12 17h.01"/></svg>
+          <span class="ct"><b>Keep terms distinctive.</b> A group term that's a common catalogue word (e.g. "side" inside "side by side") over-broadens every query that expands to it, because synonym equivalents match at full strength. Put buyer <em>phrases</em> that contain common words into the <b>AI Search Keywords</b> layer instead — that's why <code class="inl">sxs, utv</code> lives here but "side by side" does not.</span>
+        </div>
+        <div class="call call-tip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg><span class="ct">Multi-word terms work: substitution happens at the phrase level, so "a-arm" ⇄ "control arm" (joining/splitting words) is fine. Don't have a thesaurus yet? Generate one from your own catalogue — see <a href="#ai">AI Assistant</a>.</span></div>
+      </div>
+
+      <!-- Stopwords -->
+      <div class="card">
+        <div class="card-top">
+          <h3>Stop Words</h3>
+          <div class="badges"><span class="b b-type">Textarea</span><span class="b b-def">Pre-populated</span><span class="b b-scope">Store-level</span></div>
+        </div>
+        <span class="pathline">fastmagento/search/stopwords</span>
+        <p class="lead">Comma- or space-separated words ignored in queries, so filler doesn't dilute the match.</p>
+        <div class="ex"><span class="lbl">Default</span><code>a, an, and, or, the, of, for, with, to, in, on, at, by, is, it, this, that, your, my</code></div>
+        <div class="call call-info"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8h.01M11 12h1v4h1"/></svg><span class="ct">The raw multi-word phrase is preserved for phrase-matching even when a middle word is a stop word — so "side by side" stays intact rather than collapsing to "side side".</span></div>
+      </div>
+
+      <!-- Facets -->
+      <div class="card">
+        <div class="card-top">
+          <h3>Facet Attributes</h3>
+          <div class="badges"><span class="b b-type">Text</span><span class="b b-def">Default: part_type, color, size, link_style, shock_spacing</span><span class="b b-scope">Store-level</span></div>
+        </div>
+        <span class="pathline">fastmagento/search/facet_attributes</span>
+        <p class="lead">Comma-separated attribute codes that become the filter facets on the instant-search results page. Category is always included automatically.</p>
+        <div class="ex"><span class="lbl">Example</span><code>part_type,compatible_platforms,color,size</code></div>
+        <div class="call call-warn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l9 16H3z"/><path d="M12 9v4M12 17h.01"/></svg><span class="ct">Use <b>filterable, SELECT-type</b> attributes. Their option labels resolve cleanly from the index; multi-select attributes aren't supported here yet (they need an indexed option dictionary).</span></div>
+      </div>
+
+      <!-- Boost in stock -->
+      <div class="card">
+        <div class="card-top">
+          <h3>Boost In-Stock Products</h3>
+          <div class="badges"><span class="b b-type">Yes / No</span><span class="b b-def">Default: Yes</span><span class="b b-scope">Store-level</span></div>
+        </div>
+        <span class="pathline">fastmagento/search/boost_in_stock</span>
+        <p class="lead">Nudges in-stock products above out-of-stock ones — <em>without</em> a hard sort, so text relevance stays primary.</p>
+        <div class="call call-info"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8h.01M11 12h1v4h1"/></svg><span class="ct">Implemented as a ×1.6 score multiplier on in-stock items — a strongly-relevant out-of-stock product can still outrank a weakly-relevant in-stock one.</span></div>
+      </div>
+
+      <!-- Custom ranking -->
+      <div class="card">
+        <div class="card-top">
+          <h3>Custom Ranking Attribute &amp; Direction</h3>
+          <div class="badges"><span class="b b-type">Text + Select</span><span class="b b-def">Default: blank · Highest first</span><span class="b b-scope">Store-level</span></div>
+        </div>
+        <span class="pathline">fastmagento/search/custom_ranking_attribute &nbsp;·&nbsp; …/custom_ranking_direction</span>
+        <p class="lead">An optional numeric attribute used as a <em>secondary</em> ranking signal, applied only after text relevance — Algolia-style custom ranking. Blank = relevance only.</p>
+        <div class="ex"><span class="lbl">Example</span>
+          <code>custom_ranking_attribute = bestseller_score</code> &nbsp;·&nbsp; <code>direction = Highest first</code><br>
+          Products tie on text relevance → the higher <code>bestseller_score</code> wins.</div>
+        <table class="mini">
+          <tr><th>Direction</th><th>Meaning</th><th>Good for</th></tr>
+          <tr><td><code>Highest first (desc)</code></td><td>Bigger value ranks higher</td><td>bestseller rank, rating, popularity</td></tr>
+          <tr><td><code>Lowest first (asc)</code></td><td>Smaller value ranks higher</td><td>price-low, "position" fields</td></tr>
+        </table>
+        <div class="call call-info"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8h.01M11 12h1v4h1"/></svg><span class="ct">Products missing the attribute sort last — they're never dropped from results.</span></div>
+      </div>
+
+      <!-- AI keywords -->
+      <div class="card">
+        <div class="card-top">
+          <h3>AI Search Keywords <span class="b b-new">Layer</span></h3>
+          <div class="badges"><span class="b b-type">Yes / No</span><span class="b b-def">Default: No</span><span class="b b-scope">Store-level</span></div>
+        </div>
+        <span class="pathline">fastmagento/search/search_keywords_enabled</span>
+        <p class="lead">Turns on searching a hidden, AI-generated per-product keyword field (<code class="inl">fm_search_keywords</code>). It lets a product surface for terms its own copy never uses.</p>
+        <div class="ex"><span class="lbl">Example</span>A UTV part with no "side-by-side" text in its description still ranks for <code>side-by-side</code> / <code>SxS</code> because those buyer terms were generated into its keyword field.</div>
+        <div class="call call-warn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l9 16H3z"/><path d="M12 9v4M12 17h.01"/></svg><span class="ct"><b>Two steps to go live:</b> (1) populate the field off the request path with <code class="inl">bin/magento fastmagento:search-keywords:generate</code>, then (2) reindex <code class="inl">catalogsearch_fulltext</code>. Enabling the toggle alone does nothing until the field is populated.</span></div>
+        <div class="kv">
+          <div class="row"><span class="k"><b>Weight</b></span><span><code class="inl">fastmagento/search/search_keywords_weight</code> — how strongly keyword hits rank (default <b>8</b>; name defaults to 5). Only used when the layer is on.</span></div>
+          <div class="row"><span class="k"><b>Source attrs</b></span><span><code class="inl">…/keyword_source_attributes</code> — attribute codes whose labels give the generator product context (e.g. <code>part_type,make,model</code>). Blank = reuse Facet Attributes. <span class="b b-scope">Global only</span></span></div>
+        </div>
+      </div>
+    </section>
+
+    <div class="divider"></div>
+
+    <!-- ============== 3. AI ASSISTANT ============== -->
+    <section class="section" id="ai">
+      <div class="sec-head">
+        <span class="sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="7" width="16" height="12" rx="3"/><path d="M9 7V5a3 3 0 016 0v2M9 13h.01M15 13h.01"/></svg></span>
+        <h2>3 · AI Assistant</h2>
+      </div>
+      <p class="sec-sub"><span class="path-root">fastmagento/ai/*</span> &nbsp;·&nbsp; <span class="b b-scope">Global only</span> &nbsp; Connect an AI API key to auto-build a search thesaurus and keyword layer from your own catalogue. Entirely optional — leave the key blank to keep AI features off.</p>
+
+      <div class="card">
+        <div class="card-top">
+          <h3>API Key</h3>
+          <div class="badges"><span class="b b-type">Encrypted</span><span class="b b-def">Default: blank (off)</span><span class="b b-scope">Global only</span></div>
+        </div>
+        <span class="pathline">fastmagento/ai/claude_api_key</span>
+        <p class="lead">Stored encrypted. Used only by the generator tools below. Leave blank to disable all AI features.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-top">
+          <h3>Model &amp; Max Catalogue Terms</h3>
+          <div class="badges"><span class="b b-type">Text</span><span class="b b-def">Default: model id · 1200 terms</span><span class="b b-scope">Global only</span></div>
+        </div>
+        <span class="pathline">fastmagento/ai/claude_model &nbsp;·&nbsp; fastmagento/ai/max_terms</span>
+        <p class="lead"><b>Model</b> — the model id to call. <b>Max Catalogue Terms</b> — an upper bound on how many attribute values + category names are sent to the model, so very large catalogues stay bounded and cost-controlled (default 1200).</p>
+      </div>
+
+      <div class="card">
+        <div class="card-top">
+          <h3>Generate Thesaurus <span class="b b-new">Action</span></h3>
+          <div class="badges"><span class="b b-type">Button</span><span class="b b-scope">Global only</span></div>
+        </div>
+        <p class="lead">Reads your attribute values + category names and builds shopper-facing synonym groups, merged into <a href="#search">Search &gt; Synonyms</a>.</p>
+        <div class="call call-tip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg><span class="ct"><b>Order of operations:</b> save the API Key first → click Generate → <b>review</b> the proposed groups → Save the Synonyms field. Nothing changes live search until you save.</span></div>
+      </div>
+    </section>
+
+    <div class="divider"></div>
+
+    <!-- ============== 4. FAST CHECKOUT ============== -->
+    <section class="section" id="cart">
+      <div class="sec-head">
+        <span class="sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6h15l-1.5 9h-12z"/><circle cx="9" cy="20" r="1.4"/><circle cx="18" cy="20" r="1.4"/><path d="M6 6L5 3H2"/></svg></span>
+        <h2>4 · Fast Checkout</h2>
+      </div>
+      <p class="sec-sub"><span class="path-root">fastmagento/cart/*</span> &nbsp;·&nbsp; Serves cart &amp; checkout line items from OpenSearch instead of the native ~217-query product collection — the biggest single win for configurable-heavy carts.</p>
+
+      <div class="card">
+        <div class="card-top">
+          <h3>Enable Fast Checkout <span class="b b-new">Master</span></h3>
+          <div class="badges"><span class="b b-type">Yes / No</span><span class="b b-def">Default: Yes (ON)</span><span class="b b-scope">Store-level</span></div>
+        </div>
+        <span class="pathline">fastmagento/cart/enable_fast_checkout</span>
+        <p class="lead">The one switch most stores use. On by default, it enables the whole fast pipeline — OS-served quote items, optimistic stock, and fast stock sync — so Fast Checkout works fully out of the box.</p>
+        <div class="call call-tip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l8 4v5c0 4.4-3.1 7.9-8 9-4.9-1.1-8-4.6-8-9V7l8-4z"/><path d="M9 12l2 2 4-4"/></svg><span class="ct"><b>Cannot oversell.</b> Order placement still re-checks salable quantity by SKU (MSI reservations); a truly out-of-stock order is rejected at placement. Any product missing/partial in the index falls back to the fully native path automatically.</span></div>
+        <div class="call call-warn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l9 16H3z"/><path d="M12 9v4M12 17h.01"/></svg><span class="ct">After go-live, run a full reindex and place a <b>test order</b> to confirm totals. Set to <b>No</b> to fall back to the fully native cart.</span></div>
+      </div>
+
+      <div class="card">
+        <div class="card-top">
+          <h3>Advanced toggles <span class="b b-new">Granular</span></h3>
+          <div class="badges"><span class="b b-type">Yes / No ×3</span><span class="b b-def">Default: No (implied by Master)</span><span class="b b-scope">Store-level</span></div>
+        </div>
+        <p class="lead">These three give granular control. They're <em>hidden while the master is On</em> (which already turns them on). Each can also force <em>its</em> feature on by itself when the master is Off.</p>
+        <div class="opts">
+          <div class="opt"><span class="tag">os_serve_quote_items</span><span class="txt"><b>Serve Quote Items from OpenSearch.</b> Hydrate cart/checkout line products from the index instead of the ~217-query collection. Hard native fallback for missing/partial, custom-option, and bundle/grouped carts.</span></div>
+          <div class="opt"><span class="tag">optimistic_stock</span><span class="txt"><b>Optimistic Stock.</b> Skip the redundant per-load MySQL stock preload and rely on the authoritative placement-time gate. Trade-off: a briefly-stale index may only reject at the final step. <em>Validate with a real order.</em></span></div>
+          <div class="opt"><span class="tag">fast_stock_sync</span><span class="txt"><b>Fast Stock Sync.</b> On an order/refund/inventory save, patch only the stock fields of affected OS docs instead of reprojecting the whole product. Runs after the response — no shopper latency. Falls back to a full reproject if a doc isn't fully present.</span></div>
+        </div>
+        <div class="call call-info"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8h.01M11 12h1v4h1"/></svg><span class="ct">The three default to <code class="inl">0</code> by design: the master OR each flag turns a feature on, so leaving them at 0 is what lets the master switch cleanly enable <em>and</em> disable the whole bundle.</span></div>
+      </div>
+
+      <div class="card">
+        <div class="card-top">
+          <h3>Configurable Line-Item Name</h3>
+          <div class="badges"><span class="b b-type">Select</span><span class="b b-def">Default: Parent</span><span class="b b-scope">Store-level</span></div>
+        </div>
+        <span class="pathline">fastmagento/cart/configurable_line_name</span>
+        <p class="lead">Which name to show for a configurable product on cart / mini-cart / checkout. Display only — it does not change price or the placed-order line data.</p>
+        <div class="opts">
+          <div class="opt is-default"><span class="tag">Parent</span><span class="txt"><b>Configurable name</b> — Magento default. e.g. "Keira Banded Bra" with Color / Size beneath. <em>(default)</em></span></div>
+          <div class="opt"><span class="tag">Child</span><span class="txt"><b>Simple (variant) name</b> — the specific purchased variant's own name.</span></div>
+        </div>
+      </div>
+    </section>
+
+    <div class="divider"></div>
+
+    <!-- ============== 5. CACHE ============== -->
+    <section class="section" id="cache">
+      <div class="sec-head">
+        <span class="sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7l8-4 8 4-8 4-8-4z"/><path d="M4 7v6l8 4 8-4V7M4 13v4l8 4 8-4v-4"/></svg></span>
+        <h2>5 · Cache Warmup</h2>
+      </div>
+      <p class="sec-sub"><span class="path-root">fastmagento/cache/*</span></p>
+      <div class="card">
+        <div class="card-top">
+          <h3>Popular Search Terms</h3>
+          <div class="badges"><span class="b b-type">Textarea</span><span class="b b-def">Default: blank</span><span class="b b-scope">Store-level</span></div>
+        </div>
+        <span class="pathline">fastmagento/cache/popular_searches</span>
+        <p class="lead">A comma-separated list of your highest-traffic search terms. The scheduled cache-warmup cron pre-renders these result pages so the first real shopper of the day hits a warm cache instead of a cold render.</p>
+        <div class="ex"><span class="lbl">Example</span><code>a-arm, rock slider, light bar, rzr cage, tie rod</code></div>
+        <div class="call call-info"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8h.01M11 12h1v4h1"/></svg><span class="ct">Warmed by the <code class="inl">fastmagento_cache_warmup</code> cron. Keep the list short and genuinely popular — warming rarely-used terms just wastes cache.</span></div>
+      </div>
+    </section>
+
+    <div class="divider"></div>
+
+    <!-- ============== 6. EFFICIENCY ============== -->
+    <section class="section" id="efficiency">
+      <div class="sec-head">
+        <span class="sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 5-7"/></svg></span>
+        <h2>6 · Extension Efficiency Monitor</h2>
+      </div>
+      <p class="sec-sub"><span class="path-root">fastmagento/efficiency/*</span> &nbsp;·&nbsp; <span class="b b-scope">Global only</span> &nbsp; Profiles how much database work each third-party extension adds to the hot paths (indexing, product pages, category grids, search, logged-in customer data). View it under <b>FastMagento &gt; Extension Efficiency</b>.</p>
+
+      <div class="card">
+        <div class="card-top">
+          <h3>Run Scan on a Schedule</h3>
+          <div class="badges"><span class="b b-type">Yes / No</span><span class="b b-def">Default: No</span><span class="b b-scope">Global only</span></div>
+        </div>
+        <span class="pathline">fastmagento/efficiency/cron_enabled &nbsp;·&nbsp; …/cron_expr</span>
+        <p class="lead">Off by default. When on, a scan runs automatically on the schedule and refreshes the monitor. The schedule is a standard cron expression (default <code class="inl">0 3 * * 0</code> = Sundays 3:00 AM).</p>
+        <div class="call call-warn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l9 16H3z"/><path d="M12 9v4M12 17h.01"/></svg><span class="ct">A scan briefly enables query logging to attribute SQL to modules — so it's opt-in. <b>Don't overlap a full reindex.</b> You can always run one on demand from the admin page or with <code class="inl">bin/magento fastmagento:efficiency:scan</code>.</span></div>
+      </div>
+
+      <div class="card">
+        <div class="card-top">
+          <h3>Sample Size</h3>
+          <div class="badges"><span class="b b-type">Number</span><span class="b b-def">Default: 50</span><span class="b b-scope">Global only</span></div>
+        </div>
+        <span class="pathline">fastmagento/efficiency/sample_size</span>
+        <p class="lead">Products / rows profiled per scenario. Higher = steadier averages but a slower scan.</p>
+      </div>
+    </section>
+
+    <div class="divider"></div>
+
+    <!-- ============== 7. ADVANCED ============== -->
+    <section class="section" id="advanced">
+      <div class="sec-head">
+        <span class="sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg></span>
+        <h2>7 · Advanced (config-only)</h2>
+      </div>
+      <p class="sec-sub">These have no admin screen — set them via <code class="inl">app/etc/config.php</code>, <code class="inl">env.php</code>, or <code class="inl">bin/magento config:set</code>. Defaults are correct for almost everyone.</p>
+
+      <div class="card">
+        <div class="card-top">
+          <h3>Attribute-Option Pagination</h3>
+          <div class="badges"><span class="b b-type">Flag + Number</span><span class="b b-def">Default: On · 50 per page</span><span class="b b-scope">Store-level</span></div>
+        </div>
+        <span class="pathline">fastmagento/attribute_pagination/enabled &nbsp;·&nbsp; …/page_size</span>
+        <p class="lead">Replaces Magento's native "Manage Options" / swatch grid — which loads and re-saves the <em>entire</em> option set and buckles past a few thousand options — with a paginated, per-row CRUD manager.</p>
+        <div class="call call-info"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8h.01M11 12h1v4h1"/></svg><span class="ct">Leave On unless you specifically need the native grid. Only matters for attributes with very large option sets (e.g. thousands of colors/sizes).</span></div>
+      </div>
+
+      <div class="card">
+        <div class="card-top">
+          <h3>Attribute-Option Index Suffix</h3>
+          <div class="badges"><span class="b b-type">Text</span><span class="b b-def">Default: attribute_options</span><span class="b b-scope">Store-level</span></div>
+        </div>
+        <span class="pathline">fastmagento/indexing/opensearch_option_index_prefix</span>
+        <p class="lead">Suffix for the attribute-option index (→ <code class="inl">magento2_attribute_options</code>). Same convention as the product/category suffixes; rarely changed.</p>
+      </div>
+    </section>
+
+    <!-- ============== CHEAT SHEET ============== -->
+    <section class="section" id="cheat">
+      <div class="sec-head">
+        <span class="sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2V5a2 2 0 00-2-2h-3"/><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M8 11h8M8 15h5"/></svg></span>
+        <h2>Paths &amp; CLI cheat-sheet</h2>
+      </div>
+      <div class="cheat">
+<b># Set any value from the CLI (great for CI / multi-store)</b><br>
+bin/magento config:set fastmagento/search/search_operator all<br>
+bin/magento config:set --scope=stores --scope-code=default fastmagento/cart/enable_fast_checkout 1<br><br>
+<b># After changing searchable attributes / AI keywords</b><br>
+bin/magento fastmagento:search-keywords:generate&nbsp;&nbsp;<span style="color:var(--muted)"># optional: build the AI keyword layer</span><br>
+bin/magento indexer:reindex catalogsearch_fulltext fastmagento_product fastmagento_category<br><br>
+<b># Efficiency monitor on demand</b><br>
+bin/magento fastmagento:efficiency:scan --sample=50<br><br>
+<b># Flush after config changes</b><br>
+bin/magento cache:flush
+      </div>
+    </section>
+
+  </main>
+</div>
+</div>
+
+<footer class="fm-foot">
+  <div class="wrap">
+    <h4>FastMagento — Settings Reference</h4>
+    <p>Admin location: <b>Stores &gt; Configuration &gt; FastMagento Settings</b>. Config paths shown on each
+      card also work via <code class="inl">bin/magento config:set</code>, <code class="inl">app/etc/config.php</code>
+      and <code class="inl">env.php</code>. All features degrade safely to native Magento on any miss or outage.</p>
+  </div>
+</footer>
+
+</div>
+<script>
+(function(){
+  var root=document.documentElement, btn=document.getElementById('fmThemeToggle'), lbl=document.getElementById('fmThemeLabel');
+  function set(m){root.setAttribute('data-theme',m);lbl.textContent=m==='dark'?'Dark':'Light';try{localStorage.setItem('fm-theme',m);}catch(e){}}
+  var saved;try{saved=localStorage.getItem('fm-theme');}catch(e){}
+  if(saved){set(saved);}else{set(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light');}
+  btn.addEventListener('click',function(){set(root.getAttribute('data-theme')==='dark'?'light':'dark');});
+})();
+</script>
+</body>
+</html>
