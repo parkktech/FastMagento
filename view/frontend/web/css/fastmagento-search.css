@@ -145,3 +145,12 @@
     .fm-results-body { flex-direction: column; }
     .fm-sidebar { flex: none; width: 100%; }
 }
+
+/* Search results: compare + wishlist are relocated by instant-search.js into the single
+   layered-nav rail (.fm-sidebar), so hide the now-empty native second left column and give the
+   moved blocks a little separation below the facets. */
+.catalogsearch-result-index .sidebar-additional.fm-relocated { display: none !important; }
+.fm-sidebar .block-compare,
+.fm-sidebar .block-wishlist { margin-top: 24px; }
+.fm-sidebar .block-compare .block-title,
+.fm-sidebar .block-wishlist .block-title { margin-bottom: 8px; }

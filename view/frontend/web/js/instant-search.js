@@ -18,7 +18,12 @@ define(['jquery'], function ($) {
                 filters: {}
             },
             timer = null,
-            xhr = null;
+            xhr = null,
+            // Native compare + wishlist blocks, relocated once out of the second (sidebar.additional)
+            // left column into the layered-nav sidebar so the results page has ONE left rail. Held by
+            // reference so they survive each $root.html() re-render (which detaches but never destroys
+            // them — customer-data bindings stay intact). See relocateSidebarBlocks().
+            $extraBlocks = null;
 
         function getParam(name) {
             var m = new RegExp('[?&]' + name + '=([^&]*)').exec(window.location.search);
@@ -135,7 +140,36 @@ define(['jquery'], function ($) {
             return html + '</div>';
         }
 
+        // Pull the native compare + wishlist blocks out of sidebar.additional (the second left
+        // column) exactly once, keeping references. If those are the only blocks there, hide the now
+        // empty native column so the page collapses to a single left rail.
+        function grabExtraBlocks() {
+            if ($extraBlocks !== null) {
+                return;
+            }
+            var $additional = $('.sidebar-additional'),
+                $blocks = $additional.find('.block-compare, .block-wishlist');
+            $extraBlocks = $blocks.length ? $blocks : $();
+            if (
+                $additional.length &&
+                $additional.find('.block').length &&
+                $additional.find('.block').not('.block-compare').not('.block-wishlist').length === 0
+            ) {
+                $additional.addClass('fm-relocated');
+            }
+        }
+
+        // Append the relocated compare/wishlist blocks below the layered-nav facets. Called after
+        // every render because $root.html() rebuilds .fm-sidebar (and detaches the blocks); the JS
+        // reference keeps them alive so we just move the same nodes back in — no clone, no re-fetch.
+        function relocateSidebarBlocks() {
+            if ($extraBlocks && $extraBlocks.length) {
+                $root.find('.fm-sidebar').append($extraBlocks);
+            }
+        }
+
         function render(data) {
+            grabExtraBlocks();
             var html = '<div class="fm-results-header"><span class="fm-count">' + data.total +
                 ' result' + (data.total === 1 ? '' : 's') + (data.query ? ' for &ldquo;' + escapeHtml(data.query) + '&rdquo;' : '') + '</span></div>' +
                 '<div class="fm-results-body">' +
@@ -143,6 +177,7 @@ define(['jquery'], function ($) {
                 '<div class="fm-results-main">' + renderProducts(data.products) + renderPagination(data) + '</div>' +
                 '</div>';
             $root.html(html);
+            relocateSidebarBlocks();
         }
 
         // Facet toggle
