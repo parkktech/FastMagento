@@ -4,6 +4,53 @@ Start here, then read **`docs/ARCHITECTURE.md`** (the canonical how-it-works map
 points, file responsibilities, gotchas, dormant code). `README.md` is the user-facing doc.
 `git log --oneline` tells the detailed story.
 
+## ⚠️ ACTIVE HANDOFF (2026-07-23 session 3 — Stripe tax resolved + two store-side N+1 fixes) — READ FIRST
+
+Continued the detect→diagnose→fix→confirm loop off the Efficiency Monitor. Still on the **scale DB**
+(`diyscale_db`, `scale` prefix, production mode). Commits are **committed-pending — NOT pushed**.
+
+### Resolved: the Stripe-Tax-disabled live flag
+This store uses **native Magento tax** (5 tax rules; US-CA 7.75%/8.25%; `tax/defaults/region=12`). Stripe
+Tax has **zero** config and Vertex is off, so `StripeIntegration_Tax` was only ever an unused override →
+**left DISABLED**. Proved native tax still calculates with it off: scripted CA-address guest quote →
+subtotal 300 → **tax 23.25 (7.75%)** → grand total 328.25. No action needed; do NOT re-enable.
+
+### Shipped this session (all committed-pending)
+0. **Jadog_Marketplace Webkul-helper memoization** (commit `56dab972b`) — `Webkul\Marketplace\Helper\Data::getSellerCollectionObj()` re-queries `marketplace_userdata` on every call and is the seam every storefront seller check funnels through (isSeller/getSellerStatus/header blocks). Added a **preference** subclass (`Jadog\Marketplace\Helper\Data`) that memoizes the built collection per (seller, store) and defers to parent — byte-identical, only repeat queries removed. Preference (not plugin) because `isSeller()` calls it via `$this->`. Safe: no caller mutates the returned collection (verified read-only across app/code + vendor). **Verified:** marketplace_userdata findings 3→0; home+PDP still 200. (User directive: marketplace fixes go through Jadog_Marketplace.)
+1. **Jadog_Stripe** (new module, commit `620e5e73f`) — kills the checkout subscription-read N+1 that
+   fired even with subscriptions OFF. Two around-plugins gated on a memoized
+   `payment/stripe_payments_subscriptions/active` check (`Model/SubscriptionsState.php`):
+   - `SubscriptionProduct::from{QuoteItem,OrderItem,ProductId}` → return the model untouched (product
+     stays null → `isSubscriptionProduct()` false = the exact non-subscription state Stripe produces).
+     Kills `Helper\Product::getProduct` ×32 + `Helper\Subscriptions::getSubscriptionOptionDetails` ×16.
+   - `SubscriptionOptions\ReadHandler::execute` → return entity un-hydrated (matches native no-row path).
+     Kills the extension-attr read ×8.
+   Both no-op the moment subscriptions are switched on. **Verified:** all StripeIntegration checkout
+   findings gone; checkout totals + native tax still correct. ⚠️ `app/etc/config.php` is gitignored →
+   on deploy run `bin/magento module:enable Jadog_Stripe` (same caveat as Jadog_Marketplace).
+2. **Jadog_StructuredData breadcrumb fix** (commit `cc28d5cdb`) — `BreadcrumbSchema::bestCategory` /
+   `categoryPath` loaded categories one id at a time (`categoryRepository->get()` per id → `bestCategory`
+   ×9 catalog_category_entity on PDP). Replaced with a single request-memoized `Category` **collection**
+   load (`loadCategories()`) — OS-served via FastMagento's `CategoryAttributeLoadPlugin`, and 1 query
+   instead of N on any store. **Verified:** PDP still renders the full Home>…>product BreadcrumbList
+   JSON-LD; `bestCategory` gone from findings.
+
+### Diagnosed, intentionally NOT patched (with reasons)
+- **Mageplaza Productslider `getProductParentIds` ×11 (home)** — the per-product `getParentIdsByChild`
+  calls are **already FastMagento-served** (`etc/frontend/di.xml:64,75-79`, comment literally says
+  "product sliders call it"). The ×11 attributed to `sales_bestsellers_aggregated_monthly` is the
+  widget's own bestsellers-collection load — inherent, not a fixable N+1.
+- **`ProductSchema::productRefs` ×6 (url_rewrite)** — `getProductUrl()` per related product; served from
+  `url_path` via the link-collection plugin once the linked products are OS-indexed (a scale-DB artifact,
+  fine on prod's fully-indexed 14k).
+- **`ProductReviews::getFormHtml` ×4 (rating)** — core Magento review-form block loading ratings, not ours.
+- **Webkul `Plugin\App\Action\Context::aroundDispatch` ×3 (catalog_category_entity, PLP)** — Webkul's
+  per-dispatch category load on category pages; small, not yet patched.
+
+### Next (unchanged priority): update PR #6 (needs user OK), then optional Monitor date-range/history.
+Restore prod when the scale-DB testing is truly done:
+`cp app/etc/env.php.diyprod-backup app/etc/env.php && php bin/magento cache:flush` (left on scale DB for now).
+
 ## ⚠️ ACTIVE HANDOFF (2026-07-23 session 2 — Extension Efficiency Monitor) — READ FIRST
 
 New admin feature shipped this session: **Extension Efficiency Monitor** (task #11). Code-complete,
