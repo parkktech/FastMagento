@@ -7,6 +7,7 @@ namespace ParkkTech\FastMagento\Block\Adminhtml\Efficiency;
 use Magento\Backend\Block\Template;
 use Magento\Backend\Block\Template\Context;
 use Magento\Framework\Lock\LockManagerInterface;
+use ParkkTech\FastMagento\Model\Efficiency\DismissStorage;
 use ParkkTech\FastMagento\Model\Efficiency\Profiler;
 use ParkkTech\FastMagento\Model\Efficiency\ReportStorage;
 
@@ -29,6 +30,7 @@ class Dashboard extends Template
         Context $context,
         private readonly ReportStorage $reportStorage,
         private readonly LockManagerInterface $lockManager,
+        private readonly DismissStorage $dismissStorage,
         array $data = []
     ) {
         parent::__construct($context, $data);
@@ -54,10 +56,54 @@ class Dashboard extends Template
         return $this->getReport()['modules'] ?? [];
     }
 
-    /** Developer-facing N+1 hotspots from the full page renders. @return array<int, array<string, mixed>> */
+    /**
+     * Developer-facing N+1 hotspots from the full page renders, minus the ones the developer has
+     * cleared. @return array<int, array<string, mixed>>
+     */
     public function getFindings(): array
     {
-        return $this->getReport()['findings'] ?? [];
+        $all = $this->getReport()['findings'] ?? [];
+        return array_values(array_filter(
+            $all,
+            fn (array $f): bool => !$this->dismissStorage->isDismissed(DismissStorage::key($f))
+        ));
+    }
+
+    /** Stable key for a finding row — used by the "Clear" action. */
+    public function findingKey(array $finding): string
+    {
+        return DismissStorage::key($finding);
+    }
+
+    /** How many hotspots are currently cleared/hidden (so a "Restore (N)" control can show). */
+    public function getDismissedCount(): int
+    {
+        $all = $this->getReport()['findings'] ?? [];
+        $count = 0;
+        foreach ($all as $f) {
+            if ($this->dismissStorage->isDismissed(DismissStorage::key($f))) {
+                $count++;
+            }
+        }
+        return $count;
+    }
+
+    /** Guest vs logged-in badge for a finding. */
+    public function contextLabel(array $finding): string
+    {
+        return ($finding['context'] ?? 'guest') === 'logged_in'
+            ? (string) __('Logged in')
+            : (string) __('Guest');
+    }
+
+    public function getDismissUrl(): string
+    {
+        return $this->getUrl('fastmagento/efficiency/dismiss');
+    }
+
+    public function getRestoreUrl(): string
+    {
+        return $this->getUrl('fastmagento/efficiency/restore');
     }
 
     /** Per-page server response times (TTFB, ms) — the shopper-experience glance. @return array<int, array<string, mixed>> */

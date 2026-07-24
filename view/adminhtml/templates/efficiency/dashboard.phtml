@@ -135,6 +135,11 @@ $sevClass = ['critical' => 'crit', 'warn' => 'warn', 'good' => 'good'];
         .fm-eff .loops.crit{background:#FEF2F2;color:#B91C1C;box-shadow:inset 0 0 0 1px #FECACA;}
         .fm-eff .loops.warn{background:#FFFBEB;color:#B45309;box-shadow:inset 0 0 0 1px #FDE68A;}
         .fm-eff .loops.good{background:#F0FDF4;color:#15803D;box-shadow:inset 0 0 0 1px #BBF7D0;}
+        .fm-eff .fm-ctx{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:10px;font-size:10.5px;font-weight:700;vertical-align:middle;}
+        .fm-eff .fm-ctx.guest{background:#F1F5F9;color:#475569;}
+        .fm-eff .fm-ctx.in{background:#EFF6FF;color:#1D4ED8;box-shadow:inset 0 0 0 1px #BFDBFE;}
+        .fm-eff .fm-clear{border:1px solid #E2E8F0;background:#fff;color:#64748B;border-radius:6px;padding:3px 10px;font-size:11.5px;font-weight:600;cursor:pointer;}
+        .fm-eff .fm-clear:hover{border-color:#CBD5E1;color:#B91C1C;background:#FEF2F2;}
         .fm-eff .ptime.crit{color:var(--crit);}.fm-eff .ptime.warn{color:var(--accent);}.fm-eff .ptime.good{color:var(--good);}
         .fm-eff .spin{width:18px;height:18px;border:2.5px solid #BFDBFE;border-top-color:#1E40AF;
             border-radius:50%;animation:fmspin .8s linear infinite;flex-shrink:0;}
@@ -294,7 +299,13 @@ $sevClass = ['critical' => 'crit', 'warn' => 'warn', 'good' => 'good'];
         <!-- N+1 hotspots (developer view): extension · page · class::method · loops · table -->
         <?php $findings = $block->getFindings(); if ($findings): ?>
         <div class="sect-h"><h2><?= $block->escapeHtml(__('N+1 hotspots — where an extension loops')) ?></h2>
-            <span class="hint"><?= $block->escapeHtml(__('same query fired repeatedly during a real page render')) ?></span></div>
+            <span class="hint"><?= $block->escapeHtml(__('same query fired repeatedly during a real page render — clear one once fixed to see what is left')) ?></span>
+            <?php $dismissed = $block->getDismissedCount(); if ($dismissed > 0): ?>
+                <form action="<?= $block->escapeUrl($block->getRestoreUrl()) ?>" method="post" style="margin-left:auto;">
+                    <?= /* @noEscape */ $block->getBlockHtml('formkey') ?>
+                    <button type="submit" class="btn"><?= $block->escapeHtml(__('Restore %1 cleared', $dismissed)) ?></button>
+                </form>
+            <?php endif; ?></div>
         <div class="card" style="padding:0;overflow-x:auto;">
             <table class="fm-find" role="table">
                 <thead><tr>
@@ -303,15 +314,24 @@ $sevClass = ['critical' => 'crit', 'warn' => 'warn', 'good' => 'good'];
                     <th><?= $block->escapeHtml(__('Class :: method')) ?></th>
                     <th class="r"><?= $block->escapeHtml(__('Loops')) ?></th>
                     <th><?= $block->escapeHtml(__('Table')) ?></th>
+                    <th></th>
                 </tr></thead>
                 <tbody>
                 <?php foreach ($findings as $f): $sev = $f['loops'] >= 30 ? 'crit' : ($f['loops'] >= 8 ? 'warn' : 'good'); ?>
                     <tr>
                         <td><span class="dot <?= $block->escapeHtmlAttr($sev) ?>"></span><b><?= $block->escapeHtml($f['extension']) ?></b></td>
-                        <td><?= $block->escapeHtml($f['page']) ?></td>
+                        <td><?= $block->escapeHtml($f['page']) ?>
+                            <span class="fm-ctx <?= $block->escapeHtmlAttr(($f['context'] ?? 'guest') === 'logged_in' ? 'in' : 'guest') ?>"><?= $block->escapeHtml($block->contextLabel($f)) ?></span></td>
                         <td class="mono" title="<?= $block->escapeHtmlAttr($f['class'] . '::' . $f['method']) ?>"><?= $block->escapeHtml($block->shortClass($f['class'])) ?>::<b><?= $block->escapeHtml($f['method']) ?></b></td>
                         <td class="r"><span class="loops <?= $block->escapeHtmlAttr($sev) ?>">×<?= (int) $f['loops'] ?></span></td>
                         <td class="mono"><?= $block->escapeHtml($f['table']) ?></td>
+                        <td class="r">
+                            <form action="<?= $block->escapeUrl($block->getDismissUrl()) ?>" method="post" style="margin:0;">
+                                <?= /* @noEscape */ $block->getBlockHtml('formkey') ?>
+                                <input type="hidden" name="key" value="<?= $block->escapeHtmlAttr($block->findingKey($f)) ?>">
+                                <button type="submit" class="fm-clear" title="<?= $block->escapeHtmlAttr(__('Clear this hotspot')) ?>"><?= $block->escapeHtml(__('Clear')) ?></button>
+                            </form>
+                        </td>
                     </tr>
                 <?php endforeach; ?>
                 </tbody>
