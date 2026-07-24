@@ -18,15 +18,11 @@
             <group id="indexing" translate="label" sortOrder="10" showInDefault="1" showInWebsite="1" showInStore="1">
                 <label>Indexing Configuration</label>
 
-                <field id="enable_realtime_indexing" translate="label" type="select" sortOrder="10" showInDefault="1" showInWebsite="1" showInStore="1">
-                    <label>Enable Real-Time Indexing</label>
-                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
-                </field>
-
-                <field id="enable_cron_indexing" translate="label" type="select" sortOrder="20" showInDefault="1" showInWebsite="1" showInStore="1">
-                    <label>Enable Cron-Based Indexing</label>
-                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
-                </field>
+                <!-- The FastMagento indexers run off Magento's native mview (etc/mview.xml /
+                     etc/indexer.xml) — real-time vs scheduled is controlled by Magento's own
+                     Index Management "Update on Save / Schedule" mode, not here. The former
+                     enable_realtime_indexing / enable_cron_indexing toggles were never read by any
+                     code, so they were removed to avoid implying a control that did nothing. -->
 
                 <!-- ✅ New Setting: OpenSearch Index Prefix -->
                 <field id="opensearch_index_prefix" translate="label" type="text" sortOrder="30" showInDefault="1" showInWebsite="1" showInStore="1">
@@ -161,19 +157,22 @@
                 <field id="os_serve_quote_items" translate="label comment" type="select" sortOrder="10" showInDefault="1" showInWebsite="1" showInStore="1">
                     <label>Advanced: Serve Quote Items from OpenSearch</label>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
-                    <comment><![CDATA[<em>Advanced / granular control — "Enable Fast Checkout" above already turns this on.</em> Hydrate cart/checkout line products from the OpenSearch index instead of the native ~217-query product collection. Hard native fallback for any product missing/partial in the index, custom-option carts, and bundle/grouped products, so it never half-serves a cart. Live stock is still loaded natively (no overselling).]]></comment>
+                    <depends><field id="enable_fast_checkout">0</field></depends>
+                    <comment><![CDATA[<em>Advanced / granular control — only shown while "Enable Fast Checkout" is No, which already turns this on.</em> Hydrate cart/checkout line products from the OpenSearch index instead of the native ~217-query product collection. Hard native fallback for any product missing/partial in the index, custom-option carts, and bundle/grouped products, so it never half-serves a cart. Live stock is still loaded natively (no overselling).]]></comment>
                 </field>
 
                 <field id="optimistic_stock" translate="label comment" type="select" sortOrder="20" showInDefault="1" showInWebsite="1" showInStore="1">
                     <label>Advanced: Optimistic Stock (skip redundant pre-placement checks)</label>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
-                    <comment><![CDATA[<em>Advanced / granular control — "Enable Fast Checkout" above already turns this on.</em> Serve cart/checkout stock from the live-indexed OpenSearch data and skip the redundant per-load MySQL stock preload. Order placement still re-checks salable quantity by SKU (MSI reservations) and rejects a truly out-of-stock order, so this cannot oversell. Trade-off: if the index is briefly stale, a shopper may reach the final placement step before being told an item is unavailable. <strong>Validate with a real order first.</strong>]]></comment>
+                    <depends><field id="enable_fast_checkout">0</field></depends>
+                    <comment><![CDATA[<em>Advanced / granular control — only shown while "Enable Fast Checkout" is No, which already turns this on.</em> Serve cart/checkout stock from the live-indexed OpenSearch data and skip the redundant per-load MySQL stock preload. Order placement still re-checks salable quantity by SKU (MSI reservations) and rejects a truly out-of-stock order, so this cannot oversell. Trade-off: if the index is briefly stale, a shopper may reach the final placement step before being told an item is unavailable. <strong>Validate with a real order first.</strong>]]></comment>
                 </field>
 
                 <field id="fast_stock_sync" translate="label comment" type="select" sortOrder="25" showInDefault="1" showInWebsite="1" showInStore="1">
                     <label>Advanced: Fast Stock Sync (patch index instead of full reproject)</label>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
-                    <comment><![CDATA[<em>Advanced / granular control — "Enable Fast Checkout" above already turns this on.</em> When an order, refund or inventory save changes stock, patch only the stock fields of the affected OpenSearch documents (in-stock flag, quantity, and composite child stock) instead of reprojecting the whole product from the database. Much cheaper for large configurables. Runs after the response is sent, so it never adds shopper latency. Automatically falls back to a full reprojection for any product not fully present in the index, so the index can't be left stale.]]></comment>
+                    <depends><field id="enable_fast_checkout">0</field></depends>
+                    <comment><![CDATA[<em>Advanced / granular control — only shown while "Enable Fast Checkout" is No, which already turns this on.</em> When an order, refund or inventory save changes stock, patch only the stock fields of the affected OpenSearch documents (in-stock flag, quantity, and composite child stock) instead of reprojecting the whole product from the database. Much cheaper for large configurables. Runs after the response is sent, so it never adds shopper latency. Automatically falls back to a full reprojection for any product not fully present in the index, so the index can't be left stale.]]></comment>
                 </field>
 
                 <field id="configurable_line_name" translate="label comment" type="select" sortOrder="30" showInDefault="1" showInWebsite="1" showInStore="1">
