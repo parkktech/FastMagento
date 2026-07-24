@@ -4,6 +4,7 @@
     <acl>
         <resources>
             <resource id="Magento_Backend::admin">
+                <resource id="ParkkTech_FastMagento::efficiency" title="FastMagento Extension Efficiency" sortOrder="90"/>
                 <resource id="Magento_Backend::stores">
                     <resource id="Magento_Backend::stores_settings">
                         <resource id="Magento_Config::config">

@@ -14,6 +14,12 @@
             <schedule>0 * * * *</schedule> <!-- Runs every hour -->
         </job>
 
+        <!-- Extension-efficiency scan. Schedule comes from config (fastmagento/efficiency/cron_expr);
+             the job no-ops unless fastmagento/efficiency/cron_enabled is on. -->
+        <job name="fastmagento_efficiency_scan" instance="ParkkTech\FastMagento\Cron\EfficiencyScan" method="execute">
+            <config_path>fastmagento/efficiency/cron_expr</config_path>
+        </job>
+
     </group>
 
 </config>

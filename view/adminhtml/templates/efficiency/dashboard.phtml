@@ -1,0 +1,310 @@
+<?php
+/**
+ * @var \ParkkTech\FastMagento\Block\Adminhtml\Efficiency\Dashboard $block
+ * Extension Efficiency Monitor — self-contained (inline styles/SVG, no external chart libs).
+ */
+$hasReport = $block->hasReport();
+$totals = $block->getTotals();
+$worst = $block->getWorstModule();
+$impact = $block->getExtensionImpact();
+$heaviest = $block->getHeaviestPath();
+$maxPerOp = $block->getMaxPerOp();
+$sevClass = ['critical' => 'crit', 'warn' => 'warn', 'good' => 'good'];
+?>
+<div class="fm-eff">
+    <style>
+        .fm-eff{--p:#1E40AF;--p2:#3B82F6;--accent:#D97706;--good:#059669;--warn:#D97706;--crit:#DC2626;
+            --bg:#F8FAFC;--card:#fff;--bd:#E2E8F0;--ink:#0F172A;--mut:#64748B;--mut2:#94A3B8;
+            font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+            color:var(--ink);max-width:1180px;font-variant-numeric:tabular-nums;}
+        .fm-eff *{box-sizing:border-box;}
+        .fm-eff .num{font-variant-numeric:tabular-nums;}
+        .fm-eff .hd{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;
+            flex-wrap:wrap;margin:0 0 20px;}
+        .fm-eff .hd h1{font-size:22px;font-weight:700;margin:0 0 4px;letter-spacing:-.01em;}
+        .fm-eff .hd p{margin:0;color:var(--mut);font-size:13px;max-width:640px;line-height:1.5;}
+        .fm-eff .hd-actions{display:flex;flex-direction:column;align-items:flex-end;gap:8px;}
+        .fm-eff .meta{font-size:12px;color:var(--mut2);text-align:right;line-height:1.5;}
+        .fm-eff .btn{display:inline-flex;align-items:center;gap:7px;background:var(--p);color:#fff;
+            border:none;border-radius:7px;padding:9px 16px;font-size:13px;font-weight:600;cursor:pointer;
+            transition:background .18s ease,transform .06s ease;text-decoration:none;}
+        .fm-eff .btn:hover{background:#1B379B;color:#fff;}
+        .fm-eff .btn:active{transform:translateY(1px);}
+        .fm-eff .btn.ghost{background:#fff;color:var(--p);border:1px solid var(--bd);}
+        .fm-eff .btn.ghost:hover{background:#F1F5F9;}
+        .fm-eff .btn svg{width:15px;height:15px;}
+        .fm-eff .grid{display:grid;gap:14px;}
+        .fm-eff .kpis{grid-template-columns:repeat(4,1fr);margin-bottom:18px;}
+        .fm-eff .card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:16px 18px;
+            box-shadow:0 1px 2px rgba(15,23,42,.04);}
+        .fm-eff .kpi .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--mut);
+            font-weight:600;display:flex;align-items:center;gap:6px;}
+        .fm-eff .kpi .val{font-size:30px;font-weight:700;line-height:1.1;margin-top:8px;letter-spacing:-.02em;}
+        .fm-eff .kpi .sub{font-size:12px;color:var(--mut);margin-top:3px;}
+        .fm-eff .kpi .val.good{color:var(--good);}.fm-eff .kpi .val.warn{color:var(--warn);}
+        .fm-eff .kpi .val.crit{color:var(--crit);}
+        .fm-eff .sect-h{display:flex;align-items:center;gap:9px;margin:26px 0 12px;}
+        .fm-eff .sect-h h2{font-size:15px;font-weight:700;margin:0;}
+        .fm-eff .sect-h .hint{font-size:12px;color:var(--mut);font-weight:400;}
+        /* with/without comparison */
+        .fm-eff .cmp{display:grid;grid-template-columns:1fr;gap:18px;}
+        .fm-eff .cmp-row{display:grid;grid-template-columns:150px 1fr;align-items:center;gap:16px;}
+        .fm-eff .cmp-name{font-size:13px;font-weight:600;}
+        .fm-eff .cmp-name small{display:block;color:var(--mut);font-weight:400;font-size:11px;margin-top:2px;}
+        .fm-eff .track{position:relative;height:34px;background:#F1F5F9;border-radius:7px;overflow:hidden;}
+        .fm-eff .fill{position:absolute;top:0;left:0;height:100%;border-radius:7px;
+            display:flex;align-items:center;justify-content:flex-end;padding-right:11px;color:#fff;
+            font-size:13px;font-weight:700;transition:width .5s cubic-bezier(.4,0,.2,1);}
+        .fm-eff .fill.native{background:linear-gradient(90deg,#EF4444,#DC2626);}
+        .fm-eff .fill.fast{background:linear-gradient(90deg,#34D399,#059669);}
+        .fm-eff .fill.core{background:linear-gradient(90deg,#3B82F6,#1E40AF);}
+        .fm-eff .fill.tax{background:linear-gradient(90deg,#F59E0B,#D97706);font-size:12px;padding-right:8px;}
+        .fm-eff .cmp-note{font-size:12px;color:var(--mut);line-height:1.55;margin:2px 0 0;
+            padding-left:12px;border-left:3px solid var(--bd);}
+        .fm-eff .save-badge{display:inline-flex;align-items:center;gap:6px;background:#ECFDF5;color:#047857;
+            border:1px solid #A7F3D0;border-radius:999px;padding:3px 11px;font-size:12px;font-weight:700;}
+        /* area strip */
+        .fm-eff .areas{grid-template-columns:repeat(3,1fr);}
+        .fm-eff .area .an{font-size:12px;font-weight:700;color:var(--mut);text-transform:uppercase;
+            letter-spacing:.05em;}
+        .fm-eff .area .aq{font-size:24px;font-weight:700;margin-top:6px;}
+        .fm-eff .area .aq small{font-size:12px;font-weight:500;color:var(--mut);}
+        .fm-eff .area .tp{font-size:12px;color:var(--accent);margin-top:4px;font-weight:600;}
+        /* module table */
+        .fm-eff .mod{display:grid;grid-template-columns:230px 1fr 150px;gap:16px;align-items:center;
+            padding:14px 16px;border-top:1px solid var(--bd);}
+        .fm-eff .mod:first-child{border-top:none;}
+        .fm-eff .mod:hover{background:#FAFBFF;}
+        .fm-eff .mod-id{display:flex;align-items:center;gap:10px;min-width:0;}
+        .fm-eff .dot{width:9px;height:9px;border-radius:50%;flex-shrink:0;}
+        .fm-eff .dot.good{background:var(--good);}.fm-eff .dot.warn{background:var(--warn);}
+        .fm-eff .dot.crit{background:var(--crit);}
+        .fm-eff .mod-name{font-size:13px;font-weight:600;line-height:1.25;overflow:hidden;text-overflow:ellipsis;}
+        .fm-eff .mod-name small{display:block;color:var(--mut2);font-weight:400;font-size:11px;}
+        .fm-eff .mbar{display:flex;align-items:center;gap:10px;}
+        .fm-eff .mbar .track{height:22px;flex:1;}
+        .fm-eff .mbar .fill{font-size:11px;padding-right:8px;}
+        .fm-eff .mbar .fill.crit{background:linear-gradient(90deg,#F87171,#DC2626);}
+        .fm-eff .mbar .fill.warn{background:linear-gradient(90deg,#FBBF24,#D97706);}
+        .fm-eff .mbar .fill.good{background:linear-gradient(90deg,#6EE7B7,#059669);}
+        .fm-eff .chip{display:inline-block;font-size:10.5px;font-weight:600;border-radius:5px;
+            padding:2px 7px;margin:2px 3px 0 0;background:#EEF2FF;color:#3730A3;}
+        .fm-eff .chip.mono{background:#F1F5F9;color:#475569;font-family:"SFMono-Regular",Menlo,Consolas,monospace;
+            font-size:10px;}
+        .fm-eff .sev{font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;white-space:nowrap;}
+        .fm-eff .sev.good{background:#ECFDF5;color:#047857;}
+        .fm-eff .sev.warn{background:#FFFBEB;color:#B45309;}
+        .fm-eff .sev.crit{background:#FEF2F2;color:#B91C1C;}
+        .fm-eff .mdet{margin-top:8px;}
+        .fm-eff .mdet .off{font-size:11.5px;color:var(--mut);font-family:"SFMono-Regular",Menlo,Consolas,monospace;
+            display:block;margin-top:3px;}
+        .fm-eff .mdet .off b{color:var(--ink);font-weight:600;}
+        .fm-eff .mright{text-align:right;}
+        /* empty state */
+        .fm-eff .empty{text-align:center;padding:54px 24px;}
+        .fm-eff .empty svg{width:46px;height:46px;color:var(--p2);margin-bottom:14px;}
+        .fm-eff .empty h2{font-size:18px;margin:0 0 8px;}
+        .fm-eff .empty p{color:var(--mut);max-width:520px;margin:0 auto 18px;line-height:1.6;font-size:13px;}
+        .fm-eff .cli{display:inline-block;background:#0F172A;color:#E2E8F0;border-radius:7px;
+            padding:9px 14px;font-family:"SFMono-Regular",Menlo,Consolas,monospace;font-size:12.5px;margin-top:8px;}
+        .fm-eff .legend{display:flex;gap:16px;flex-wrap:wrap;font-size:11.5px;color:var(--mut);margin-top:10px;}
+        .fm-eff .legend span{display:inline-flex;align-items:center;gap:6px;}
+        .fm-eff .legend i{width:9px;height:9px;border-radius:50%;display:inline-block;}
+        /* banners */
+        .fm-eff .banner{display:flex;align-items:center;gap:12px;border-radius:10px;padding:13px 16px;
+            margin:0 0 18px;font-size:13px;line-height:1.45;}
+        .fm-eff .banner.run{background:#EFF6FF;border:1px solid #BFDBFE;color:#1E3A8A;}
+        .fm-eff .banner.stale{background:#FFFBEB;border:1px solid #FDE68A;color:#92400E;
+            justify-content:space-between;flex-wrap:wrap;}
+        .fm-eff .banner b{font-weight:700;}
+        .fm-eff .banner .btn{flex-shrink:0;}
+        .fm-eff .spin{width:18px;height:18px;border:2.5px solid #BFDBFE;border-top-color:#1E40AF;
+            border-radius:50%;animation:fmspin .8s linear infinite;flex-shrink:0;}
+        @keyframes fmspin{to{transform:rotate(360deg);}}
+        @media (prefers-reduced-motion:reduce){.fm-eff .spin{animation:none;}}
+        @media (max-width:900px){.fm-eff .kpis{grid-template-columns:repeat(2,1fr);}
+            .fm-eff .mod{grid-template-columns:1fr;gap:10px;}.fm-eff .areas{grid-template-columns:1fr;}
+            .fm-eff .cmp-row{grid-template-columns:1fr;}.fm-eff .mright{text-align:left;}}
+        @media (prefers-reduced-motion:reduce){.fm-eff .fill{transition:none;}}
+    </style>
+
+    <?php $svgBolt = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>'; ?>
+
+    <div class="hd">
+        <div>
+            <h1><?= $block->escapeHtml(__('Extension Efficiency Monitor')) ?></h1>
+            <p><?= $block->escapeHtml(__('How much database work each third-party extension adds to your storefront hot paths — product pages, category grids, and search. Every SQL query from a controlled profile run is attributed to the extension that fired it.')) ?></p>
+        </div>
+        <div class="hd-actions">
+            <form action="<?= $block->escapeUrl($block->getScanUrl()) ?>" method="post">
+                <?= /* @noEscape */ $block->getBlockHtml('formkey') ?>
+                <button type="submit" class="btn"><?= /* @noEscape */ $svgBolt ?><?= $block->escapeHtml(__('Run scan now')) ?></button>
+            </form>
+            <?php if ($hasReport): ?>
+                <div class="meta">
+                    <?= $block->escapeHtml(__('Last scan: %1', $block->getGeneratedAt())) ?><br>
+                    <?= $block->escapeHtml(__('Sample: %1 per scenario', $block->getSampleSize())) ?> ·
+                    <a href="<?= $block->escapeUrl($block->getConfigUrl()) ?>"><?= $block->escapeHtml(__('Schedule')) ?></a>
+                </div>
+            <?php endif; ?>
+        </div>
+    </div>
+
+    <?php if ($block->isInProgress()): ?>
+        <div class="banner run" role="status" aria-live="polite">
+            <span class="spin" aria-hidden="true"></span>
+            <span><b><?= $block->escapeHtml(__('Scan in progress…')) ?></b>
+                <?= $block->escapeHtml(__('Profiling your extensions across the hot paths. This page refreshes automatically — the results appear here in about a minute.')) ?></span>
+        </div>
+        <script>
+            // Reload to the clean monitor URL (no started flag) while a scan holds the lock; once it
+            // finishes the reloaded page is no longer "in progress", so auto-refresh naturally stops.
+            setTimeout(function () {
+                window.location.href = <?= /* @noEscape */ json_encode($block->getIndexUrl(), JSON_UNESCAPED_SLASHES) ?>;
+            }, <?= $block->justStarted() ? 8000 : 11000 ?>);
+        </script>
+    <?php elseif ($hasReport && $block->isStale()): ?>
+        <div class="banner stale" role="status">
+            <span><b><?= $block->escapeHtml(__('This report is %1 days old.', (int) $block->getReportAgeDays())) ?></b>
+                <?= $block->escapeHtml(__('Run a fresh scan to see your current extension overhead.')) ?></span>
+            <form action="<?= $block->escapeUrl($block->getScanUrl()) ?>" method="post" style="margin:0;">
+                <?= /* @noEscape */ $block->getBlockHtml('formkey') ?>
+                <button type="submit" class="btn"><?= /* @noEscape */ $svgBolt ?><?= $block->escapeHtml(__('Run fresh scan')) ?></button>
+            </form>
+        </div>
+    <?php endif; ?>
+
+    <?php if (!$hasReport): ?>
+        <div class="card empty">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
+            <h2><?= $block->escapeHtml(__('No scan yet')) ?></h2>
+            <p><?= $block->escapeHtml(__('Run a scan to profile your installed extensions. It briefly enables query logging, exercises each hot path, and attributes every database query to the extension that triggered it — then compares native product loading against the FastMagento batched loader.')) ?></p>
+            <form action="<?= $block->escapeUrl($block->getScanUrl()) ?>" method="post">
+                <?= /* @noEscape */ $block->getBlockHtml('formkey') ?>
+                <button type="submit" class="btn"><?= /* @noEscape */ $svgBolt ?><?= $block->escapeHtml(__('Run first scan')) ?></button>
+            </form>
+            <div><span class="cli">bin/magento fastmagento:efficiency:scan</span></div>
+        </div>
+    <?php else: ?>
+
+        <!-- KPI tiles -->
+        <div class="grid kpis">
+            <div class="card kpi">
+                <div class="lbl"><?= $block->escapeHtml(__('Extensions on hot paths')) ?></div>
+                <div class="val"><?= (int) $totals['third_party_modules'] ?></div>
+                <div class="sub"><?= $block->escapeHtml(__('third-party modules firing SQL')) ?></div>
+            </div>
+            <div class="card kpi">
+                <div class="lbl"><?= $block->escapeHtml(__('Extension queries')) ?></div>
+                <div class="val warn"><?= (int) $totals['third_party_queries'] ?></div>
+                <div class="sub"><?= $block->escapeHtml(__('added across the profiled sample')) ?></div>
+            </div>
+            <div class="card kpi">
+                <div class="lbl"><?= $block->escapeHtml(__('Biggest offender')) ?></div>
+                <?php if ($worst): $wc = $sevClass[$worst['severity']] ?? 'good'; ?>
+                    <div class="val <?= $block->escapeHtmlAttr($wc) ?>" style="font-size:19px;line-height:1.3;margin-top:10px;">
+                        <?= $block->escapeHtml($worst['title']) ?>
+                    </div>
+                    <div class="sub"><?= $block->escapeHtml(__('%1 queries/op at its worst path', number_format((float) $worst['worst_per_op'], 1))) ?></div>
+                <?php else: ?>
+                    <div class="val good" style="font-size:19px;margin-top:10px;"><?= $block->escapeHtml(__('None')) ?></div>
+                <?php endif; ?>
+            </div>
+            <div class="card kpi">
+                <div class="lbl"><?= $block->escapeHtml(__('Heaviest path')) ?></div>
+                <?php if ($heaviest && (float) $heaviest['tax'] > 0): ?>
+                    <div class="val" style="font-size:19px;line-height:1.3;margin-top:10px;"><?= $block->escapeHtml($heaviest['label']) ?></div>
+                    <div class="sub"><?= $block->escapeHtml(__('%1% of its queries come from extensions', (int) $heaviest['pct'])) ?></div>
+                <?php else: ?>
+                    <div class="val good" style="font-size:19px;margin-top:10px;"><?= $block->escapeHtml(__('Clean')) ?></div>
+                    <div class="sub"><?= $block->escapeHtml(__('no measurable extension tax')) ?></div>
+                <?php endif; ?>
+            </div>
+        </div>
+
+        <!-- Extension tax by hot path: with vs without the installed extensions -->
+        <?php if ($impact):
+            $mx = 0.1;
+            foreach ($impact as $im) { $mx = max($mx, (float) $im['with_ext']); }
+        ?>
+        <div class="sect-h">
+            <h2><?= $block->escapeHtml(__('Extension tax by hot path')) ?></h2>
+            <span class="hint"><?= $block->escapeHtml(__('queries per operation — core vs. what extensions add')) ?></span>
+        </div>
+        <div class="card">
+            <div class="cmp">
+                <?php foreach ($impact as $im):
+                    $with = (float) $im['with_ext'];
+                    $tax = (float) $im['tax'];
+                    $core = max(0.0, $with - $tax);
+                ?>
+                <div class="cmp-row">
+                    <div class="cmp-name"><?= $block->escapeHtml($im['label']) ?>
+                        <small><?= $block->escapeHtml($block->areaUnit($im['area'])) ?> · <?= $block->escapeHtml(__('%1 core → %2 total', number_format($core, 1), number_format($with, 1))) ?></small></div>
+                    <div class="track" title="<?= $block->escapeHtmlAttr(__('%1 queries/op, %2% from extensions', number_format($with, 1), (int) $im['pct'])) ?>">
+                        <div class="fill core" style="width:<?= $block->barWidthPct($core, $mx) ?>%;"><?php if ($core > 0): ?><?= $block->escapeHtml(number_format($core, 1)) ?><?php endif; ?></div>
+                        <?php if ($tax > 0): ?>
+                            <div class="fill tax" style="left:<?= $block->barWidthPct($core, $mx) ?>%;width:<?= $block->barWidthPct($tax, $mx) ?>%;"><?= $block->escapeHtml('+' . number_format($tax, 1)) ?></div>
+                        <?php endif; ?>
+                    </div>
+                </div>
+                <?php endforeach; ?>
+                <div class="legend" style="margin-top:4px;">
+                    <span><i style="background:var(--p2);"></i><?= $block->escapeHtml(__('Core Magento')) ?></span>
+                    <span><i style="background:var(--accent);"></i><?= $block->escapeHtml(__('Added by extensions')) ?></span>
+                </div>
+            </div>
+        </div>
+        <?php endif; ?>
+
+        <!-- Module ranking -->
+        <div class="sect-h"><h2><?= $block->escapeHtml(__('Extensions ranked by database overhead')) ?></h2></div>
+        <div class="card" style="padding:4px 0;" role="table" aria-label="<?= $block->escapeHtmlAttr(__('Extensions ranked by database overhead')) ?>">
+            <?php foreach ($block->getModules() as $module):
+                $sc = $sevClass[$module['severity']] ?? 'good';
+                $worstPerOp = (float) ($module['worst_per_op'] ?? 0);
+            ?>
+                <div class="mod" role="row">
+                    <div class="mod-id">
+                        <span class="dot <?= $block->escapeHtmlAttr($sc) ?>" aria-hidden="true"></span>
+                        <div style="min-width:0;">
+                            <div class="mod-name"><?= $block->escapeHtml($module['title']) ?>
+                                <small><?= $block->escapeHtml($module['module']) ?></small></div>
+                        </div>
+                    </div>
+                    <div>
+                        <div class="mbar">
+                            <div class="track"><div class="fill <?= $block->escapeHtmlAttr($sc) ?>"
+                                style="width:<?= $block->barWidthPct($worstPerOp, $maxPerOp) ?>%;">
+                                <?= $block->escapeHtml(number_format($worstPerOp, 1)) ?> q/op</div></div>
+                        </div>
+                        <div class="mdet">
+                            <?php foreach (array_keys($module['per_op'] ?? []) as $area): ?>
+                                <span class="chip"><?= $block->escapeHtml($block->areaLabel($area)) ?>: <?= $block->escapeHtml(number_format((float) $module['per_op'][$area], 1)) ?></span>
+                            <?php endforeach; ?>
+                            <?php foreach (($module['tables'] ?? []) as $t): ?>
+                                <span class="chip mono"><?= $block->escapeHtml($t) ?></span>
+                            <?php endforeach; ?>
+                            <?php if (!empty($module['offenders'])): $off = $module['offenders'][0]; ?>
+                                <span class="off"><?= $block->escapeHtml(__('Fires via')) ?>
+                                    <b><?= $block->escapeHtml($block->shortSignature($off['signature'])) ?></b>
+                                    <?= $block->escapeHtml(__('(×%1)', $off['count'])) ?></span>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                    <div class="mright" role="cell">
+                        <span class="sev <?= $block->escapeHtmlAttr($sc) ?>"><?= $block->escapeHtml($block->severityLabel($module['severity'])) ?></span>
+                        <div class="sub" style="font-size:12px;color:var(--mut);margin-top:6px;">
+                            <?= $block->escapeHtml(__('%1 queries total', (int) $module['total'])) ?></div>
+                    </div>
+                </div>
+            <?php endforeach; ?>
+        </div>
+        <div class="legend">
+            <span><i style="background:var(--crit);"></i><?= $block->escapeHtml(__('High impact (≥5 q/op)')) ?></span>
+            <span><i style="background:var(--warn);"></i><?= $block->escapeHtml(__('Moderate (≥1 q/op)')) ?></span>
+            <span><i style="background:var(--good);"></i><?= $block->escapeHtml(__('Low impact')) ?></span>
+        </div>
+
+    <?php endif; ?>
+</div>

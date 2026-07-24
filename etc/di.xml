@@ -20,7 +20,18 @@
         <arguments>
             <argument name="commands" xsi:type="array">
                 <item name="fastmagento_generate_search_keywords" xsi:type="object">ParkkTech\FastMagento\Console\Command\GenerateSearchKeywords</item>
+                <item name="fastmagento_efficiency_scan" xsi:type="object">ParkkTech\FastMagento\Console\Command\EfficiencyScan</item>
+                <item name="fastmagento_efficiency_worker" xsi:type="object">ParkkTech\FastMagento\Console\Command\EfficiencyWorker</item>
             </argument>
+        </arguments>
+    </type>
+
+    <!-- Efficiency monitor: the search scenario needs the real fulltext search collection. Its
+         factory is a virtualType (can't be a PHP constructor hint), so bind it here; the second
+         collection-factory argument keeps the plain product collection for the PLP scenario. -->
+    <type name="ParkkTech\FastMagento\Model\Efficiency\ScenarioRunner">
+        <arguments>
+            <argument name="fulltextCollectionFactory" xsi:type="object">Magento\CatalogSearch\Model\ResourceModel\Fulltext\CollectionFactory</argument>
         </arguments>
     </type>
 

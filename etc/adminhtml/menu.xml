@@ -16,5 +16,13 @@
              sortOrder="20"
              action="adminhtml/system_config/edit/section/fastmagento"
              resource="ParkkTech_FastMagento::config"/>
+
+        <add id="ParkkTech_FastMagento::efficiency"
+             title="Extension Efficiency"
+             module="ParkkTech_FastMagento"
+             parent="ParkkTech_FastMagento::main_menu"
+             sortOrder="30"
+             action="fastmagento/efficiency/index"
+             resource="ParkkTech_FastMagento::efficiency"/>
     </menu>
 </config>

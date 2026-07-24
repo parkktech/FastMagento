@@ -97,6 +97,14 @@ xxxl, 3xl, triple xl</synonyms>
                 <enabled>1</enabled>
                 <page_size>50</page_size>
             </attribute_pagination>
+            <efficiency>
+                <!-- Extension-efficiency monitor. Scheduled scan is OFF by default: the scan
+                     briefly enables db_logger to attribute SQL to modules, so a store opts in
+                     explicitly (or runs it on demand from the admin page / CLI). -->
+                <cron_enabled>0</cron_enabled>
+                <cron_expr>0 3 * * 0</cron_expr>
+                <sample_size>50</sample_size>
+            </efficiency>
             <cart>
                 <!-- Master toggle. Default ON. Turning it on enables the WHOLE fast pipeline —
                      OS-serving the quote items, optimistic stock, AND fast stock sync — so Fast

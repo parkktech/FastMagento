@@ -191,6 +191,27 @@
                     <label>Popular Search Terms (Comma-Separated)</label>
                 </field>
             </group>
+
+            <!-- Extension Efficiency Monitor -->
+            <group id="efficiency" translate="label" sortOrder="40" showInDefault="1" showInWebsite="0" showInStore="0">
+                <label>Extension Efficiency Monitor</label>
+                <comment><![CDATA[Profiles how much database work each third-party extension adds to the hot paths (indexing, product pages, category grids, search). View the report under <strong>FastMagento &gt; Extension Efficiency</strong>. You can run a scan on demand from that page, on a schedule below, or with <code>bin/magento fastmagento:efficiency:scan</code>.]]></comment>
+
+                <field id="cron_enabled" translate="label comment" type="select" sortOrder="10" showInDefault="1" showInWebsite="0" showInStore="0">
+                    <label>Run Scan on a Schedule</label>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <comment>Off by default. When on, a scan runs automatically on the schedule below and refreshes the monitor.</comment>
+                </field>
+                <field id="cron_expr" translate="label comment" type="text" sortOrder="20" showInDefault="1" showInWebsite="0" showInStore="0">
+                    <label>Schedule (cron expression)</label>
+                    <depends><field id="cron_enabled">1</field></depends>
+                    <comment>Standard cron expression. Default "0 3 * * 0" = every Sunday at 3:00 AM. Avoid overlapping a full reindex.</comment>
+                </field>
+                <field id="sample_size" translate="label comment" type="text" sortOrder="30" showInDefault="1" showInWebsite="0" showInStore="0">
+                    <label>Sample Size</label>
+                    <comment>Products/rows profiled per scenario (default 50). Higher = steadier averages, slower scan.</comment>
+                </field>
+            </group>
         </section>
     </system>
 </config>
