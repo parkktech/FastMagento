@@ -153,40 +153,42 @@ query reductions but feels less wall-clock benefit (see the note under Benchmark
 > **4,187 configurables**, a **50,000-option** color attribute, every bra/apparel size) in an
 > isolated database. **Apples-to-apples**: the module is fully **disabled** (`module:disable`, real
 > native MySQL) vs **enabled**, replaying the *same* URLs and the *same* 10-configured-item cart.
-> **Cold render** (Full-Page-Cache disabled) — the honest comparison, because on an FPC *hit* both
-> states serve identical cached HTML. The store runs its real third-party stack (Webkul
+> **Cold render** (every request a unique URL → Full-Page-Cache *miss*, median of 3) — the honest
+> comparison, because on an FPC *hit* both states serve identical cached HTML. Cart/checkout use the
+> REST totals endpoints (never FPC-cached). The store runs its real third-party stack (Webkul
 > Marketplace, Stripe, …) on every page in **both** columns.
 
 **Page load / render time @ 500k products (cold render)**
 
 | Surface | Without (native) | With FastMagento | Speed-up |
 |---|---:|---:|---:|
-| Home / CMS | 893 ms | **553 ms** | **1.6×** |
-| PDP · simple | 546 ms | 536 ms | ~1× |
-| PDP · configurable (660-variant) | 1,354 ms | **918 ms** | **1.5×** |
-| Category / PLP | 560 ms | 593 ms | ~1× |
-| Search results (SERP) | 1,720 ms | **714 ms** | **2.4×** |
-| Cart · collectTotals (10 configured) | 543 ms | **117 ms** | **4.6×** |
-| Checkout · `totals-information` | 1,636 ms | **1,118 ms** | **1.5×** |
+| Home / CMS | 2,911 ms | **775 ms** | **3.8×** |
+| PDP · simple | 555 ms | **480 ms** | 1.2× |
+| PDP · configurable (660-variant) | 1,371 ms | **827 ms** | **1.7×** |
+| Category / PLP | 543 ms | 622 ms | ~1× |
+| Search results (SERP) | 631 ms | **338 ms** | **1.9×** |
+| Cart · collectTotals (10 configured) | 1,485 ms | **1,009 ms** | **1.5×** |
+| Checkout · `totals-information` | 1,510 ms | **1,110 ms** | **1.4×** |
 
 **SQL queries per cold render @ 500k products** — the scale-invariant metric:
 
 | Surface | Without (native) | With FastMagento | Reduction |
 |---|---:|---:|---:|
-| Home / CMS | 5,734 | **116** | **−98%** |
-| PDP · simple | 822 | 540 | −34% |
-| PDP · configurable | 774 | 494 | −36% |
-| Category / PLP | 484 | 256 | −47% |
-| Search results | 610 | **48** | **−92%** |
-| Cart · collectTotals (10 configured) | 1,683 | **141** | **−92%** |
-| Checkout · `totals-information` | 2,688 | 654 | −76% |
+| Home / CMS | 10,090 | **80** | **−99%** |
+| PDP · simple | 413 | 256 | −38% |
+| PDP · configurable | 388 | 231 | −40% |
+| Category / PLP | 246 | 131 | −47% |
+| Search results | 220 | **23** | **−90%** |
+| Cart · collectTotals (10 configured) | 1,210 | **265** | **−78%** |
+| Checkout · `totals-information` | 1,250 | **295** | **−76%** |
 
 > **How to read it (honestly).** The **query-count collapse is the headline** — the homepage alone
-> goes **5,734 → 116** queries, and the never-cached cart/checkout path drops **~12×**. Wall-clock
-> wins are biggest where data-loading is the bottleneck (home, search, configurable PDP, cart);
-> it's roughly flat on light pages (simple PDP, small category) because there the time is dominated
-> by PHP rendering + third-party modules (**Webkul Marketplace alone fires ~180 queries/PDP**),
-> which are identical in both columns. On a production DB (millions of EAV rows, 1–5 ms/query,
+> goes **10,090 → 80** queries (**~126×**), and the never-cached cart/checkout path drops **~4–5×**
+> (1,210 → 265). Wall-clock wins are biggest where data-loading is the bottleneck (home, search,
+> configurable PDP, cart); it's roughly flat on light pages (simple PDP) and can even be a hair
+> slower on a small category, because there the time is dominated by PHP rendering + third-party
+> modules (**Webkul Marketplace alone fires ~180 queries/PDP**) — identical in both columns — and the
+> OpenSearch round-trip adds a few ms. On a production DB (millions of EAV rows, 1–5 ms/query,
 > networked/replicated) that same query collapse is **seconds** of latency and a large drop in DB
 > load. The design goal — **product/EAV SQL stays flat as the catalog grows** — holds; native does
 > not. These page-time figures are **server response (TTFB-class)**; the real *browser* gap is

@@ -4,7 +4,65 @@ Start here, then read **`docs/ARCHITECTURE.md`** (the canonical how-it-works map
 points, file responsibilities, gotchas, dormant code). `README.md` is the user-facing doc.
 `git log --oneline` tells the detailed story.
 
-## ⚠️ ACTIVE HANDOFF (2026-07-23 — verification + two production fixes) — READ FIRST
+## ⚠️ ACTIVE HANDOFF (2026-07-23 session 2 — Extension Efficiency Monitor) — READ FIRST
+
+New admin feature shipped this session: **Extension Efficiency Monitor** (task #11). Code-complete,
+`magento-code-reviewer`-passed (all blocking fixes applied), compiled, and live-verified on the 500k
+scale DB. **Committed-pending — NOT yet pushed to `fastmagento` master** (ask user first).
+
+**What it is:** admin dashboard under *FastMagento → Extension Efficiency* that profiles how much DB
+work each third-party extension adds to the storefront hot paths (PDP / PLP / Search), attributing
+every SQL query to the extension that fired it via `db_logger` stacktraces. Segmented core-vs-extension
+bars, severity-ranked extension table with the offending `class::method` + tables touched.
+
+**Three triggers** (per user request): admin **"Run scan now"** button (background), **cron**
+(`fastmagento/efficiency/cron_expr`, off by default), and **CLI** `bin/magento fastmagento:efficiency:scan`.
+Plus a **staleness banner** (≥7 days) and **auto-refresh while scanning** (lock-driven).
+
+**Files:** `Model/Efficiency/{Profiler,DbLogParser,ModuleAttributor,ScenarioRunner,ReportStorage}.php`,
+`Console/Command/Efficiency{Scan,Worker}.php`, `Cron/EfficiencyScan.php`,
+`Controller/Adminhtml/Efficiency/{Index,Scan}.php`, `Block/Adminhtml/Efficiency/Dashboard.php`,
+`view/adminhtml/{layout/fastmagento_efficiency_index.xml,templates/efficiency/dashboard.phtml}`,
++ di/menu/acl/system/config/crontab wiring. Report JSON: `var/fastmagento/efficiency-report.json`.
+
+**How it works / gotchas:**
+- The scan flips `db_logger` on via an **atomic** env.php write (temp+rename), runs each scenario in a
+  **fresh `bin/magento` worker** (so it bootstraps with logging on — the parent can't self-log), parses
+  the log, then restores db_logger and **empties db.log**. A **named lock** serializes scans; a
+  leftover-config check prevents logging ever getting stuck on.
+- **Measurement caveat (important):** on a live FastMagento store, `getById`/PDP is **OS-served**, so
+  native-vs-FastMagento product-load can't be measured (that's the whole point — the cost is gone). The
+  monitor therefore measures **extension tax = total queries vs total-minus-third-party** per hot path,
+  which IS measurable and honest. On the scale DB the numbers are small (generated products have no
+  marketplace/Stripe associations); it still correctly flags **Webkul Marketplace** (its
+  `Model\Rewrite\...\Product\Collection::load` adds all 5 queries on a category page = 100% of PLP cost,
+  HIGH impact). **PROD would surface more** (real Webkul seller data, Stripe) — worth a demo scan there.
+- `search` on the scale index returns 0 results for sampled terms (store search-index routing quirk);
+  ops is counted per-search (=1) so it's not misleading. PDP measures 0 queries (fully OS-served).
+
+**Reindex:** the 500k run finished — `518,771` docs, all indexers Ready (product 57m06s, category 0s,
+catalogsearch 2m40s). Still on scale DB.
+
+**README 500k benchmark re-verified (task #5, done)** on the full index, module `disable` vs `enable`,
+cache-busted cold render, median of clean runs. New numbers replace the partial-index ones (which
+badly overstated the WITH query counts). Headline: **home 10,090→80 q (~126×), 2,911→775 ms (3.8×);
+search 220→23 q (−90%); config PDP 388→231 q, 1,371→827 ms (1.7×); cart collectTotals 1,210→265 q
+(−78%); checkout totals-information 1,250→295 q (−76%)**. Category is ~flat / a hair slower on
+wall-clock (light page, PHP-dominated + OS round-trip) though −47% queries. Both README tables + the
+"how to read it" note updated.
+
+**Serving bug FIXED this session:** `ShellNoEavProduct::getOptions()` returned `null` (inherited from
+the shell's no-op load), so core `product/view/options.phtml`'s `count($block->getOptions())` fataled
+(PHP 8 `count(null)`) → HTTP 500 on any product whose OS doc has no `options` field (hit `605-jeh-001`
+= entity_id 1). Added a `getOptions()` override returning `[]` on miss (also hardened
+`ShellDataProduct::getOptions()`). Verified `605-jeh-001` → 200 with real content. Compiled in.
+
+**Everything above is committed-pending — nothing pushed. Remaining: GIFs (tasks #3/#4), then release
+(task #6, needs user OK to push to `fastmagento` master).**
+
+---
+
+## ⚠️ ACTIVE HANDOFF (2026-07-23 — verification + two production fixes)
 
 Re-verified every 2026-07-22 TODO against the live box, then fixed two live-store bugs surfaced
 during it. State below is measured, not assumed. **Code changes below are committed-pending — the
