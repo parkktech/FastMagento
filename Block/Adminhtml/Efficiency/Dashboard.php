@@ -54,6 +54,19 @@ class Dashboard extends Template
         return $this->getReport()['modules'] ?? [];
     }
 
+    /** Developer-facing N+1 hotspots from the full page renders. @return array<int, array<string, mixed>> */
+    public function getFindings(): array
+    {
+        return $this->getReport()['findings'] ?? [];
+    }
+
+    /** Short class name (drops namespace) for compact display. */
+    public function shortClass(string $class): string
+    {
+        $parts = explode('\\', $class);
+        return array_pop($parts) ?: $class;
+    }
+
     /** @return array<int, array<string, mixed>> */
     public function getScenarios(): array
     {

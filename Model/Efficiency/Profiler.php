@@ -57,6 +57,7 @@ class Profiler
         private readonly Json $json,
         private readonly Shell $shell,
         private readonly LockManagerInterface $lockManager,
+        private readonly PageProfiler $pageProfiler,
         private readonly LoggerInterface $logger
     ) {
         $this->root = $this->directoryList->getRoot();
@@ -79,6 +80,7 @@ class Profiler
 
         $prior = $this->readDbLoggerConfig();
         $weEnabledLogging = ($prior === null); // if logging was already on, it's the store owner's — leave it be
+        $findings = [];
         try {
             $this->setDbLoggerConfig(true);
             $scenarios = [];
@@ -86,6 +88,9 @@ class Profiler
                 $progress("Profiling: $scenario …");
                 $scenarios[$scenario] = $this->runScenario($scenario, $sampleSize);
             }
+            // Full HTTP page renders — catches block-render N+1 loops the in-process scenarios miss.
+            $progress('Profiling: full page renders …');
+            $findings = $this->pageProfiler->capture();
         } finally {
             $this->restoreDbLoggerConfig($prior);
             // db.log is written with log_everything + full stacktraces, so it grows fast. Once logging
@@ -97,6 +102,7 @@ class Profiler
         }
 
         $report = $this->buildReport($scenarios, $sampleSize);
+        $report['findings'] = $findings;
         $this->reportStorage->save($report);
         return $report;
     }

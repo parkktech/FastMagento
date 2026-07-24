@@ -118,6 +118,23 @@ $sevClass = ['critical' => 'crit', 'warn' => 'warn', 'good' => 'good'];
             justify-content:space-between;flex-wrap:wrap;}
         .fm-eff .banner b{font-weight:700;}
         .fm-eff .banner .btn{flex-shrink:0;}
+        /* N+1 hotspots table */
+        .fm-eff .fm-find{width:100%;border-collapse:collapse;font-size:12.5px;}
+        .fm-eff .fm-find thead th{text-align:left;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;
+            color:var(--mut);font-weight:700;padding:11px 16px;border-bottom:1px solid var(--bd);background:#F8FAFC;
+            position:sticky;top:0;}
+        .fm-eff .fm-find th.r,.fm-eff .fm-find td.r{text-align:right;}
+        .fm-eff .fm-find td{padding:11px 16px;border-bottom:1px solid #F1F5F9;vertical-align:middle;}
+        .fm-eff .fm-find tbody tr:hover{background:#FAFBFF;}
+        .fm-eff .fm-find tbody tr:last-child td{border-bottom:none;}
+        .fm-eff .fm-find td.mono{font-family:"SFMono-Regular",Menlo,Consolas,monospace;font-size:11.5px;color:#475569;}
+        .fm-eff .fm-find td.mono b{color:var(--ink);}
+        .fm-eff .fm-find .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:8px;vertical-align:middle;}
+        .fm-eff .loops{display:inline-block;min-width:44px;text-align:center;font-weight:800;font-size:12.5px;
+            padding:3px 9px;border-radius:6px;font-variant-numeric:tabular-nums;}
+        .fm-eff .loops.crit{background:#FEF2F2;color:#B91C1C;box-shadow:inset 0 0 0 1px #FECACA;}
+        .fm-eff .loops.warn{background:#FFFBEB;color:#B45309;box-shadow:inset 0 0 0 1px #FDE68A;}
+        .fm-eff .loops.good{background:#F0FDF4;color:#15803D;box-shadow:inset 0 0 0 1px #BBF7D0;}
         .fm-eff .spin{width:18px;height:18px;border:2.5px solid #BFDBFE;border-top-color:#1E40AF;
             border-radius:50%;animation:fmspin .8s linear infinite;flex-shrink:0;}
         @keyframes fmspin{to{transform:rotate(360deg);}}
@@ -254,6 +271,34 @@ $sevClass = ['critical' => 'crit', 'warn' => 'warn', 'good' => 'good'];
                     <span><i style="background:var(--accent);"></i><?= $block->escapeHtml(__('Added by extensions')) ?></span>
                 </div>
             </div>
+        </div>
+        <?php endif; ?>
+
+        <!-- N+1 hotspots (developer view): extension · page · class::method · loops · table -->
+        <?php $findings = $block->getFindings(); if ($findings): ?>
+        <div class="sect-h"><h2><?= $block->escapeHtml(__('N+1 hotspots — where an extension loops')) ?></h2>
+            <span class="hint"><?= $block->escapeHtml(__('same query fired repeatedly during a real page render')) ?></span></div>
+        <div class="card" style="padding:0;overflow-x:auto;">
+            <table class="fm-find" role="table">
+                <thead><tr>
+                    <th><?= $block->escapeHtml(__('Extension')) ?></th>
+                    <th><?= $block->escapeHtml(__('Page')) ?></th>
+                    <th><?= $block->escapeHtml(__('Class :: method')) ?></th>
+                    <th class="r"><?= $block->escapeHtml(__('Loops')) ?></th>
+                    <th><?= $block->escapeHtml(__('Table')) ?></th>
+                </tr></thead>
+                <tbody>
+                <?php foreach ($findings as $f): $sev = $f['loops'] >= 30 ? 'crit' : ($f['loops'] >= 8 ? 'warn' : 'good'); ?>
+                    <tr>
+                        <td><span class="dot <?= $block->escapeHtmlAttr($sev) ?>"></span><b><?= $block->escapeHtml($f['extension']) ?></b></td>
+                        <td><?= $block->escapeHtml($f['page']) ?></td>
+                        <td class="mono" title="<?= $block->escapeHtmlAttr($f['class'] . '::' . $f['method']) ?>"><?= $block->escapeHtml($block->shortClass($f['class'])) ?>::<b><?= $block->escapeHtml($f['method']) ?></b></td>
+                        <td class="r"><span class="loops <?= $block->escapeHtmlAttr($sev) ?>">×<?= (int) $f['loops'] ?></span></td>
+                        <td class="mono"><?= $block->escapeHtml($f['table']) ?></td>
+                    </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
         </div>
         <?php endif; ?>
 
