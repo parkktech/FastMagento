@@ -570,6 +570,17 @@ DB), third-party extensions, SEO modules, themes and page builders keep working 
 beneath Full-Page-Cache / Varnish, and any feature can be toggled off to fall straight back to
 native behaviour. Adopt it incrementally.
 
+### Breeze (Swissup) compatible
+
+The bulk of FastMagento is backend, so it's theme-agnostic. Its only storefront JavaScript — the
+as-you-type **autocomplete** and the live **instant-search** results page — is plain jQuery
+bootstrapped through `text/x-magento-init` / `data-mage-init`, with **no Knockout, jQuery-UI, or
+`mage/*` widget dependencies**. That's the ideal shape for [Breeze](https://breezefront.com)'s
+**Better Compatibility** mode: `view/frontend/layout/breeze_default.xml` registers the module so
+Breeze reuses the exact same `web/js` files and `requirejs-config.js` aliases and runs them with real
+jQuery — nothing is forked into a `js/breeze/` bundle. On **native Luma** the `breeze_default` handle
+never fires, so that file is inert and the RequireJS path is untouched. **One codebase, both stacks.**
+
 ---
 
 ## What it serves from OpenSearch — and the SQL it removes

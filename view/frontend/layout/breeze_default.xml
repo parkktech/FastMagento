@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<!--
+    Breeze (Swissup) compatibility.
+
+    This layout handle is loaded ONLY when the Breeze frontend framework is installed and active
+    (Breeze registers the `breeze_default` handle). On a native Luma / RequireJS storefront this file
+    is never parsed, so it cannot affect Luma behaviour — FastMagento keeps running exactly as before.
+
+    FastMagento's storefront JS (js/autocomplete, js/instant-search) is plain jQuery bootstrapped via
+    `text/x-magento-init` and `data-mage-init`, with no Knockout, jQuery-UI, or mage/* widget deps.
+    That is the ideal shape for Breeze's "Better Compatibility" mode, which reuses the module's
+    existing `view/frontend/web/js` files and `requirejs-config.js` alias map (fastmagentoAutocomplete
+    / fastmagentoInstantSearch) as-is and runs them with real jQuery — so `$.ajax(...).done().always()`
+    and `xhr.abort()` keep working. No JS is duplicated into a js/breeze/ bundle; the same files serve
+    both themes.
+
+    Docs: https://breezefront.com/docs/components (Better Compatibility).
+-->
+<page xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/page_configuration.xsd">
+    <body>
+        <referenceBlock name="breeze.js">
+            <arguments>
+                <argument name="better_compatibility" xsi:type="array">
+                    <item name="ParkkTech_FastMagento" xsi:type="boolean">true</item>
+                </argument>
+            </arguments>
+        </referenceBlock>
+    </body>
+</page>
