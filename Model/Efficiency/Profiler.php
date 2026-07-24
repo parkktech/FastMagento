@@ -80,7 +80,7 @@ class Profiler
 
         $prior = $this->readDbLoggerConfig();
         $weEnabledLogging = ($prior === null); // if logging was already on, it's the store owner's — leave it be
-        $findings = [];
+        $pageProfile = ['findings' => [], 'page_times' => []];
         try {
             $this->setDbLoggerConfig(true);
             $scenarios = [];
@@ -89,8 +89,8 @@ class Profiler
                 $scenarios[$scenario] = $this->runScenario($scenario, $sampleSize);
             }
             // Full HTTP page renders — catches block-render N+1 loops the in-process scenarios miss.
-            $progress('Profiling: full page renders …');
-            $findings = $this->pageProfiler->capture();
+            $progress('Profiling: full page renders + checkout …');
+            $pageProfile = $this->pageProfiler->capture();
         } finally {
             $this->restoreDbLoggerConfig($prior);
             // db.log is written with log_everything + full stacktraces, so it grows fast. Once logging
@@ -102,7 +102,8 @@ class Profiler
         }
 
         $report = $this->buildReport($scenarios, $sampleSize);
-        $report['findings'] = $findings;
+        $report['findings'] = $pageProfile['findings'];
+        $report['page_times'] = $pageProfile['page_times'];
         $this->reportStorage->save($report);
         return $report;
     }

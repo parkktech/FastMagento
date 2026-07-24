@@ -214,6 +214,35 @@ query reductions but feels less wall-clock benefit (see the note under Benchmark
 
 <p align="center"><img src="docs/img/demo-attribute-manager.gif" alt="Paginated attribute-option manager on a 50,000-option attribute" width="100%"/></p>
 
+---
+
+## 🔎 Extension Efficiency Monitor — find *which* extension is slowing you down
+
+Third-party extensions don't advertise their cost. FastMagento's **Extension Efficiency Monitor**
+(Admin → *FastMagento → Extension Efficiency*) profiles a real page render — data loads, full
+**PDP / category / search** HTML, **and the checkout totals** path — then attributes **every SQL
+query to the extension that fired it**. It answers the question every store owner actually has:
+*"which app is making my store slow, and where do I tell my developer to look?"*
+
+The headline is the **N+1 hotspot table** — a developer can read one row and know exactly where to
+go: **Extension · Page · Class::Method · Loops · Table**. On this 500k-product store with its real
+third-party stack it surfaces, automatically:
+
+| Extension | Page | Class :: Method | Loops | Table |
+|---|---|---|---:|---|
+| Webkul Marketplace | PDP | `Data::getSellerCollectionObj` | **×87** | `marketplace_userdata` |
+| Webkul Marketplace | PDP | `SellerIdAttribute::getAllOptions` | ×84 | `marketplace_userdata` |
+| Mageplaza Productslider | Home | `AbstractSlider::getProductParentIds` | ×11 | `sales_bestsellers…` |
+| Jadog StructuredData | PDP | `BreadcrumbSchema::bestCategory` | ×9 | `catalog_category_entity` |
+| StripeIntegration Payments | Checkout | `Product::getProduct` | ×4 | `catalog_product_entity` |
+
+Plus **at-a-glance customer-experience load times** per page (Home / PDP / PLP / Search / Checkout,
+colour-coded), a per-hot-path **core-vs-extension query "tax"** chart, and a severity-ranked table of
+every extension's total database overhead. Run it on demand, on a schedule (cron), or from the CLI
+(`bin/magento fastmagento:efficiency:scan`). **It works for any extension** — no per-extension config.
+
+<p align="center"><img src="docs/img/demo-efficiency-monitor.png" alt="Extension Efficiency Monitor — N+1 hotspots, load times, and per-extension database overhead" width="100%"/></p>
+
 > The reference numbers below are from a mid-sized (~14.6k-product) catalog; the 500k tables above
 > are the headline "does it hold at scale" proof.
 

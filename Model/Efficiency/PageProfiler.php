@@ -44,30 +44,45 @@ class PageProfiler
     }
 
     /**
-     * @return array<int, array<string, mixed>> findings, most loops first
+     * @return array{findings:array<int,array<string,mixed>>, page_times:array<int,array<string,mixed>>}
      */
     public function capture(): array
     {
         $host = $this->storeHost();
         if ($host === null) {
-            return [];
+            return ['findings' => [], 'page_times' => []];
         }
 
         $findings = [];
+        $pageTimes = [];
         foreach ($this->discoverPages() as $page) {
             try {
-                $queries = $this->hit($host, $page['url']);
+                [$queries, $ttfb] = $this->hit($host, $page['url']);
             } catch (\Throwable $e) {
                 $this->logger->warning("FastMagento page profile '{$page['key']}' failed: " . $e->getMessage());
                 continue;
             }
+            $pageTimes[] = ['page' => $page['label'], 'key' => $page['key'], 'ms' => $ttfb];
             foreach ($this->extract($queries, $page) as $finding) {
                 $findings[] = $finding;
             }
         }
 
+        // Checkout totals — the path Stripe (and other tax/totals extensions) are expensive on.
+        try {
+            [$queries, $ttfb, $ok] = $this->captureCheckout($host);
+            if ($ok) {
+                $pageTimes[] = ['page' => 'Checkout (totals)', 'key' => 'checkout', 'ms' => $ttfb];
+                foreach ($this->extract($queries, ['key' => 'checkout', 'label' => 'Checkout']) as $finding) {
+                    $findings[] = $finding;
+                }
+            }
+        } catch (\Throwable $e) {
+            $this->logger->warning('FastMagento checkout profile failed: ' . $e->getMessage());
+        }
+
         usort($findings, static fn ($a, $b) => $b['loops'] <=> $a['loops']);
-        return array_slice($findings, 0, 25);
+        return ['findings' => array_slice($findings, 0, 30), 'page_times' => $pageTimes];
     }
 
     /**
@@ -121,14 +136,61 @@ class PageProfiler
     {
         $logPath = $this->root . '/var/debug/db.log';
         $sep = str_contains($path, '?') ? '&' : '?';
-        $warm = 'http://127.0.0.1' . $path . $sep . 'fmcb=' . 'w';
-        $meas = 'http://127.0.0.1' . $path . $sep . 'fmcb=' . 'm';
+        $warm = 'http://127.0.0.1' . $path . $sep . 'fmcb=w';
+        $meas = 'http://127.0.0.1' . $path . $sep . 'fmcb=m';
 
         $this->shell->execute('curl -s -o /dev/null -m 120 -H %s %s', ['Host: ' . $host, $warm]);
         @file_put_contents($logPath, '');
-        $this->shell->execute('curl -s -o /dev/null -m 120 -H %s %s', ['Host: ' . $host, $meas]);
+        $out = $this->shell->execute('curl -s -o /dev/null -w %s -m 120 -H %s %s', ['%{time_starttransfer}', 'Host: ' . $host, $meas]);
+        $ttfb = (int) round(((float) trim($out)) * 1000);
 
-        return $this->logParser->parse($logPath);
+        return [$this->logParser->parse($logPath), $ttfb];
+    }
+
+    /**
+     * Build a tiny guest cart (read-only totals, no order placed) and profile the checkout totals
+     * path — where tax/subscription extensions (Stripe, …) loop per line item.
+     *
+     * @return array{0:array, 1:int, 2:bool} [queries, ttfb_ms, ok]
+     */
+    private function captureCheckout(string $host): array
+    {
+        $sku = $this->discoverSimpleSku();
+        if ($sku === null) {
+            return [[], 0, false];
+        }
+        $base = 'http://127.0.0.1';
+        $hHost = 'Host: ' . $host;
+        $hJson = 'Content-Type: application/json';
+
+        $cart = trim($this->shell->execute('curl -s -X POST -H %s -H %s %s', [$hHost, $hJson, "$base/rest/V1/guest-carts"]), "\" \n");
+        if (strlen($cart) < 10) {
+            return [[], 0, false];
+        }
+        $item = '{"cartItem":{"sku":' . json_encode($sku) . ',"qty":2,"quote_id":' . json_encode($cart) . '}}';
+        $this->shell->execute('curl -s -o /dev/null -X POST -H %s -H %s -d %s %s', [$hHost, $hJson, $item, "$base/rest/V1/guest-carts/$cart/items"]);
+
+        $body = '{"addressInformation":{"address":{"country_id":"US","region_id":12,"region_code":"CA","postcode":"90001","city":"Los Angeles","street":["1 Test St"],"firstname":"T","lastname":"T","telephone":"5555550100"},"shipping_method_code":"flatrate","shipping_carrier_code":"flatrate"}}';
+        $url = "$base/rest/V1/guest-carts/$cart/totals-information";
+        $this->shell->execute('curl -s -o /dev/null -X POST -H %s -H %s -d %s %s', [$hHost, $hJson, $body, $url]); // warm
+        @file_put_contents($this->root . '/var/debug/db.log', '');
+        $out = $this->shell->execute('curl -s -o /dev/null -w %s -X POST -H %s -H %s -d %s %s', ['%{time_total}', $hHost, $hJson, $body, $url]);
+        $ttfb = (int) round(((float) trim($out)) * 1000);
+
+        return [$this->logParser->parse($this->root . '/var/debug/db.log'), $ttfb, true];
+    }
+
+    private function discoverSimpleSku(): ?string
+    {
+        $c = $this->resource->getConnection();
+        $select = $c->select()
+            ->from(['e' => $this->resource->getTableName('catalog_product_entity')], ['sku'])
+            ->join(['s' => $this->resource->getTableName('cataloginventory_stock_status')], 's.product_id = e.entity_id', [])
+            ->where('e.type_id = ?', 'simple')
+            ->where('s.stock_status = ?', 1)
+            ->limit(1);
+        $v = $c->fetchOne($select);
+        return $v !== false && $v !== '' ? (string) $v : null;
     }
 
     /**

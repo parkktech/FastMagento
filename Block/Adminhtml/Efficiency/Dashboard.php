@@ -60,6 +60,18 @@ class Dashboard extends Template
         return $this->getReport()['findings'] ?? [];
     }
 
+    /** Per-page server response times (TTFB, ms) — the shopper-experience glance. @return array<int, array<string, mixed>> */
+    public function getPageTimes(): array
+    {
+        return $this->getReport()['page_times'] ?? [];
+    }
+
+    /** Colour a load time green/amber/red for at-a-glance UX. */
+    public function timeSeverity(int $ms): string
+    {
+        return $ms >= 1500 ? 'crit' : ($ms >= 700 ? 'warn' : 'good');
+    }
+
     /** Short class name (drops namespace) for compact display. */
     public function shortClass(string $class): string
     {
