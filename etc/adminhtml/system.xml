@@ -213,6 +213,16 @@
                     <comment>Products/rows profiled per scenario (default 50). Higher = steadier averages, slower scan.</comment>
                 </field>
             </group>
+
+            <!-- Footer credit -->
+            <group id="credit" translate="label" sortOrder="50" showInDefault="1" showInWebsite="1" showInStore="1">
+                <label>Footer Credit</label>
+                <field id="show" translate="label comment" type="select" sortOrder="10" showInDefault="1" showInWebsite="1" showInStore="1">
+                    <label>Show "Powered by FastMagento" credit</label>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <comment><![CDATA[<strong>Please consider leaving this on 🙏</strong> — a small, visible footer credit is the only thing we ask in return for the extension, and it helps other merchants discover it. If it doesn't fit your footer, <strong>please restyle it instead of removing it</strong>: it's plain and class-based, so a couple of lines of CSS in your theme reskin it — for example:<br><br><code>.fm-credit { opacity: 1; font-size: 12px; color: #8a8f98; }<br>.fm-credit__link { color: #your-accent; }<br>.fm-credit__sep { display: none; }</code><br><br>You can also override the template <code>ParkkTech_FastMagento::footer-credit.phtml</code> in your own theme for a fully custom look. Thank you for supporting the project!]]></comment>
+                </field>
+            </group>
         </section>
     </system>
 </config>

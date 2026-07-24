@@ -1,25 +1,32 @@
 <?php
 /**
- * Default FastMagento footer credit — deliberately MINIMAL.
+ * Default FastMagento footer credit — deliberately MINIMAL and easy to restyle.
  *
- * A subtle, single line that inherits the host theme's typography and colour (only opacity + size
- * are set) so installing FastMagento never restyles or disturbs a store's own footer/design. It's
- * still a real, visible attribution link — the "pass-through" credit — and it's gated by the
- * `fastmagento/credit/show` config flag (ifconfig in layout), so any store can switch it off.
+ * A subtle single line that inherits the host theme's typography/colour (only size + opacity are
+ * set) so installing FastMagento never disturbs a store's design. It's a real, visible attribution
+ * link — the "pass-through" credit — gated by the `fastmagento/credit/show` flag (ifconfig).
  *
- * Stores that want a richer, branded version override this template in their own theme
- * (see app/design/frontend/Hos/diy/ParkkTech_FastMagento/templates/footer-credit.phtml).
+ * We'd genuinely appreciate you leaving it on — it's the one thing we ask in return for the
+ * extension. If it doesn't suit your footer, please RESTYLE rather than remove it: everything is
+ * class-based (.fm-credit) so a couple of lines of theme CSS reskins it, e.g.
+ *     .fm-credit{opacity:1;font-size:12px;color:#8a8f98}
+ *     .fm-credit a{color:#your-accent}
+ *
+ * Themes can also override this template entirely (see the Hos/diy featured version).
  *
  * @var \Magento\Framework\View\Element\Template $block
  */
 ?>
-<div class="fm-credit" style="margin:10px 0 0;text-align:center;font-size:.8em;opacity:.65;line-height:1.6">
-    <a href="https://packagist.org/packages/parkktech/fastmagento" target="_blank" rel="noopener"
-       style="color:inherit;text-decoration:none">Powered by FastMagento</a>
-    <span aria-hidden="true" style="opacity:.5;margin:0 6px">·</span>
-    <a href="https://github.com/parkktech/FastMagento" target="_blank" rel="noopener"
-       style="color:inherit;text-decoration:none">GitHub</a>
-    <span aria-hidden="true" style="opacity:.5;margin:0 6px">·</span>
-    <a href="http://parkktech.com/" target="_blank" rel="noopener"
-       style="color:inherit;text-decoration:none">Developed by ParkkTech</a>
+<div class="fm-credit">
+    <a class="fm-credit__link" href="https://packagist.org/packages/parkktech/fastmagento" target="_blank" rel="noopener">Powered by FastMagento</a>
+    <span class="fm-credit__sep" aria-hidden="true">·</span>
+    <a class="fm-credit__link" href="https://github.com/parkktech/FastMagento" target="_blank" rel="noopener">GitHub</a>
+    <span class="fm-credit__sep" aria-hidden="true">·</span>
+    <a class="fm-credit__link" href="http://parkktech.com/" target="_blank" rel="noopener">Developed by ParkkTech</a>
 </div>
+<style>
+  .fm-credit{margin:10px 0 0;text-align:center;font-size:.8em;line-height:1.6;opacity:.7}
+  .fm-credit__link{color:inherit;text-decoration:none}
+  .fm-credit__link:hover{text-decoration:underline}
+  .fm-credit__sep{opacity:.5;margin:0 6px}
+</style>
