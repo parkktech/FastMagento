@@ -11,5 +11,11 @@
                    name="fastmagento.autocomplete.init"
                    template="ParkkTech_FastMagento::search/autocomplete-init.phtml"/>
         </referenceContainer>
+        <!-- Subtle "powered by" credit line in the footer (visible, tasteful attribution). -->
+        <referenceContainer name="footer">
+            <block class="Magento\Framework\View\Element\Template"
+                   name="fastmagento.credit"
+                   template="ParkkTech_FastMagento::footer-credit.phtml"/>
+        </referenceContainer>
     </body>
 </page>
