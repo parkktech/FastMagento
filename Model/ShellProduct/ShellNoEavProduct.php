@@ -95,9 +95,9 @@ class ShellNoEavProduct extends CoreProduct
         array                               $data = [],
         ?\Magento\Eav\Model\Config           $config = null,
         ?FilterProductCustomAttribute        $filterCustomAttribute = null,
-        // FastMagento deps are appended AFTER core's $data/$config/$filterCustomAttribute,
-        // nullable with an ObjectManager fallback, so `array $data` keeps core Product's
-        // parameter position. Core code paths (e.g. configurable child hydration) that
+        // FastMagento deps are appended AFTER core's $data/$config/$filterCustomAttribute so
+        // `array $data` keeps core Product's parameter position. DI does not auto-resolve optional
+        // parameters, so etc/di.xml supplies these explicitly. Core code paths (e.g. configurable child hydration) that
         // instantiate a product positionally pass $data into the right slot; placing these
         // required deps before $data shifted that slot and caused a constructor TypeError.
         ?UrlFinderInterface $urlFinder = null,
@@ -106,13 +106,19 @@ class ShellNoEavProduct extends CoreProduct
         ?\Magento\Customer\Model\Session $customerGroupSession = null
     )
     {
-        $om = \Magento\Framework\App\ObjectManager::getInstance();
+        foreach (['urlFinder', 'categoryCollectionFactory', 'scopeConfig', 'customerGroupSession'] as $name) {
+            if ($$name === null) {
+                throw new \LogicException(
+                    sprintf('%s requires $%s; it is declared in ParkkTech_FastMagento etc/di.xml.', self::class, $name)
+                );
+            }
+        }
         $this->collectionFactory = $collectionFactory;
         $this->productAttributeRepository = $metadataService;
-        $this->urlFinder = $urlFinder ?? $om->get(UrlFinderInterface::class);
-        $this->categoryCollectionFactory = $categoryCollectionFactory ?? $om->get(CategoryCollectionFactory::class);
-        $this->scopeConfig = $scopeConfig ?? $om->get(ScopeConfigInterface::class);
-        $this->customerGroupSession = $customerGroupSession ?? $om->get(\Magento\Customer\Model\Session::class);
+        $this->urlFinder = $urlFinder;
+        $this->categoryCollectionFactory = $categoryCollectionFactory;
+        $this->scopeConfig = $scopeConfig;
+        $this->customerGroupSession = $customerGroupSession;
         parent::__construct($context, $registry, $extensionFactory, $customAttributeFactory, $storeManager, $metadataService, $url, $productLink, $itemOptionFactory, $stockItemFactory, $catalogProductOptionFactory, $catalogProductVisibility, $catalogProductStatus, $catalogProductMediaConfig, $catalogProductType, $moduleManager, $catalogProduct, $resource, $resourceCollection, $collectionFactory, $filesystem, $indexerRegistry, $productFlatIndexerProcessor, $productPriceIndexerProcessor, $productEavIndexerProcessor, $categoryRepository, $imageCacheFactory, $entityCollectionProvider, $linkTypeProvider, $productLinkFactory, $productLinkExtensionFactory, $mediaGalleryEntryConverterPool, $dataObjectHelper, $joinProcessor);
     }
 

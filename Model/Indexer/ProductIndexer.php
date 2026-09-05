@@ -82,17 +82,10 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
         private WriteLog $writeLog,
         private ProductRepositoryInterface $productRepository,
         private readonly EntityLink $entityLink,
-        private ?\Magento\Framework\Stdlib\DateTime\TimezoneInterface $localeDate = null,
-        private ?\ParkkTech\FastMagento\Model\OpenSearch\IndexSettings $indexSettings = null
+        private readonly \ParkkTech\FastMagento\Model\Projection\ExtensionAttributes $extensionProjection,
+        private readonly \Magento\Framework\Stdlib\DateTime\TimezoneInterface $localeDate,
+        private readonly \ParkkTech\FastMagento\Model\OpenSearch\IndexSettings $indexSettings,
     ) {
-        $this->localeDate = $localeDate
-            ?? \Magento\Framework\App\ObjectManager::getInstance()
-                ->get(\Magento\Framework\Stdlib\DateTime\TimezoneInterface::class);
-        // Optional-with-fallback so an existing install's compiled DI keeps working across the
-        // upgrade that introduces it (same pattern as $localeDate above).
-        $this->indexSettings = $indexSettings
-            ?? \Magento\Framework\App\ObjectManager::getInstance()
-                ->get(\ParkkTech\FastMagento\Model\OpenSearch\IndexSettings::class);
         $this->clientResolver = $clientResolver;
         $this->engineResolver = $engineResolver;
         $this->productCollectionFactory = $productCollectionFactory;
@@ -130,6 +123,7 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
 
     public function executeRow($id): void
     {
+        $this->extensionProjection->reset();
         try {
             $id = (int)$id;
             /** @var Product $product */
@@ -160,6 +154,7 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
 
     public function execute($ids)
     {
+        $this->extensionProjection->reset();
         if (empty($ids)) {
             // Stream entity ids set-based; never materialise full products just to list ids.
             $connection = $this->productCollectionFactory->create()->getConnection();
@@ -260,6 +255,7 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
      */
     public function indexProductObject(\Magento\Catalog\Model\Product $product): void
     {
+        $this->extensionProjection->reset();
         try {
             if (!$product->getId()) {
                 return;
@@ -1213,6 +1209,7 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
                     // Canonical request path, mapped as a keyword so the URL-rewrite router can
                     // resolve a product URL with one term query (CategoryUrlFinderPlugin).
                     'request_path' => ['type' => 'keyword', 'ignore_above' => 1024],
+                    'fm_extension_attributes' => ['type' => 'object', 'enabled' => false],
                     // Related / up-sell / cross-sell id lists, in merchant position order.
                     // Mapped explicitly because the index is `dynamic: false`; the read path only
                     // ever reads them back out of _source, never queries them, so `index: false`
@@ -1300,6 +1297,7 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
     private function prepareDoc(\Magento\Catalog\Model\Product $product): array
     {
         $productData = $product->getData();
+        $productData['fm_extension_attributes'] = $this->extensionProjection->project($product);
         // Drop the product type's RUNTIME object caches (`_cache_instance_configurable_attributes`,
         // `_cache_instance_used_product_attributes`, …). getData() carries them once the type
         // instance has run, and serializing them into the index bloats the doc AND, served back on
@@ -1811,6 +1809,10 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
             $stock = $stockMap[$cid] ?? ['qty' => 0.0, 'is_in_stock' => false];
             $childProductsArray[] = [
                 'entity_id' => $cid,
+                'fm_extension_attributes' => $this->extensionProjection->project($child),
+                // The existing extension projection already read these at index time.
+                // Retain them for inline swatch galleries; do not load them on the storefront.
+                'media_gallery' => $child->getData('media_gallery') ?? ['images' => [], 'values' => []],
                 'sku' => $child->getSku(),
                 'name' => $child->getName(),
                 'price' => (float)$child->getPrice(),
@@ -1936,7 +1938,7 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
         $select
             ->columns(['entity_id' => new \Zend_Db_Expr($pid)])
             ->where($pid . ' IN (?)', $productIds)
-            ->where('tp.website_id IN (?)', [0, 1]);
+            ->where('tp.website_id IN (?)', [0, (int)$this->storeManager->getStore($this->getIndexStoreId())->getWebsiteId()]);
 
         $map = [];
         foreach ($connection->fetchAll($select) as $row) {

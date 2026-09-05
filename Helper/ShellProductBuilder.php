@@ -75,7 +75,8 @@ class ShellProductBuilder
         private EavConfig $eavConfig,
         private EavAttributeFactory $eavAttributeFactory,
         private \Magento\Downloadable\Model\LinkFactory $downloadableLinkFactory,
-        private \Magento\Downloadable\Model\SampleFactory $downloadableSampleFactory
+        private \Magento\Downloadable\Model\SampleFactory $downloadableSampleFactory,
+        private readonly \ParkkTech\FastMagento\Model\Projection\ExtensionAttributes $extensionProjection
     ) {
         $this->shellProductFactory = $shellProductFactory;
         $this->shellPriceFactory = $shellPriceFactory;
@@ -475,6 +476,7 @@ class ShellProductBuilder
         // core treat arrays as attribute objects the cart page 500s in getUsedProductAttributes
         // getId(). Core rebuilds them live from the OS-hydrated data when next needed.
         $product->stripRuntimeCaches();
+        $this->extensionProjection->hydrate($product, $doc['fm_extension_attributes'] ?? []);
 
         return $product;
     }

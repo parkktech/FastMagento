@@ -37,9 +37,6 @@ class AbsentCheckProductCollection extends ProductCollection
     /** @var int[]|null Ids captured from addIdFilter(), or null when the filter was not used. */
     private ?array $fmFilteredIds = null;
 
-    /** @var bool Set once an OS lookup has been attempted, so one failure is not retried. */
-    private bool $fmOsUnavailable = false;
-
     /**
      * @param mixed $productId
      * @param bool $exclude
@@ -59,34 +56,15 @@ class AbsentCheckProductCollection extends ProductCollection
     }
 
     /**
-     * @param int|string|null $limit
-     * @param int|string|null $offset
-     * @return array
+     * Ids captured by addIdFilter(), or null when the plain "these ids" form was not used.
+     * Read by Plugin\Quote\AbsentCheckFromIndexPlugin, which answers getAllIds() from the index;
+     * the product collection constructor is core's ~30-argument signature, so the OpenSearch
+     * dependency is injected into that plugin rather than into an overridden constructor.
+     *
+     * @return int[]|null
      */
-    public function getAllIds($limit = null, $offset = null)
+    public function getFmFilteredIds(): ?array
     {
-        if ($limit !== null || $offset !== null || !$this->fmFilteredIds || $this->fmOsUnavailable) {
-            return parent::getAllIds($limit, $offset);
-        }
-
-        try {
-            $fetcher = \Magento\Framework\App\ObjectManager::getInstance()
-                ->get(\ParkkTech\FastMagento\Helper\OpenSearchPdpFetcher::class);
-            $docs = $fetcher->fetchByIds($this->fmFilteredIds);
-
-            foreach ($this->fmFilteredIds as $id) {
-                if (!isset($docs[$id])) {
-                    // The index cannot vouch for this id. Do not conclude the product is gone —
-                    // ask the database, which is the only thing entitled to that answer.
-                    return parent::getAllIds($limit, $offset);
-                }
-            }
-
-            return $this->fmFilteredIds;
-        } catch (\Throwable $e) {
-            $this->fmOsUnavailable = true;
-
-            return parent::getAllIds($limit, $offset);
-        }
+        return $this->fmFilteredIds;
     }
 }

@@ -5,6 +5,66 @@ All notable changes to FastMagento are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Index-time extension attribute projection** (`Model\Projection\ExtensionAttributes`): declared
+  product extension attributes are projected into the OpenSearch document and rebuilt as typed
+  objects through the installed DI definitions, so storefront hydration needs no extension reader
+  calls.
+- **Inline configurable images from indexed child data** (`Plugin\ConfigurableImagesPlugin`): fills an
+  empty image configuration from the already-fetched child documents (a theme block returning `[]`
+  from `getOptionImages()` no longer forces a swatch AJAX round-trip); nonempty configurations are
+  preserved. Full variant galleries already read by the projector are retained in the index.
+- **Commerce staging hooks**: relationship changelog rows translated from `row_id` to public entity
+  ids (`Plugin\Mview\RelationshipEntityId`), affected ids reprojected when scheduled updates apply.
+  The `Magento_Staging`/`Magento_CatalogStaging` sequence entries and plugins are optional; Open
+  Source installs are unaffected (verified: `setup:upgrade`, `setup:di:compile`, doctor, reindex and
+  page renders on Magento Open Source 2.4.9).
+
+### Changed
+- **Collection hydration is a plugin, not a preference.** `Plugin\CollectionEntityHydration` hydrates
+  at the public `_loadEntities()` seam of the resolved fulltext collection, so a third-party subclass
+  or virtual type keeps working. The `Fulltext\Collection` preference and the Elasticsearch virtual
+  types were removed; the class stays for integrations that extend it.
+- **Tier prices** are indexed for the index store's website instead of hard-coded website 1.
+- `CategoryModelBuilder` keeps category ids string-valued to match strictly typed callers.
+- **No `ObjectManager` lookups anywhere in the module** (factories excepted, as Magento intends).
+  `ProductIndexer`, `CategoryIndexer`, `RelevanceConfig` and `CategoryChildrenPlugin` take their
+  dependencies as required constructor parameters (the former `?? ObjectManager::getInstance()`
+  fallbacks are gone; subclasses calling the parent constructor must pass them). The preference
+  subclasses `Quote\Item\Collection` and `ShellNoEavProduct` keep core's parameter positions and
+  receive their appended dependencies from `etc/di.xml` arguments, failing fast with a
+  `LogicException` if those are missing. The cart's absent-product lookup moved into
+  `Plugin\Quote\AbsentCheckFromIndexPlugin` with an injected fetcher. The legacy
+  `Fulltext\Collection` no longer overrides `_loadEntities()`: the hydration plugin already
+  intercepts it on every subclass. The extension projection builds nested data objects through
+  `Magento\Framework\Api\ObjectFactory`.
+  **Upgrade note:** because constructor signatures changed, run `setup:di:compile` against the new
+  code before `setup:upgrade --keep-generated`, or run `setup:upgrade` without that flag.
+
+### Fixed
+- **Instant search: theme-rendered facets on themes with an ajax layered navigation.** The theme's
+  layered-navigation script (Swissup Ajax Layered Navigation on Breeze, mounted after our first
+  render) bound its own click handler to the option links we clone, fetched the native results
+  page — emptied by the takeover — and replaced the grid and sidebar with it. Facet and
+  "currently filtering" clicks are now handled in the capture phase on the facet host and stop
+  there, the cloned option no longer carries the prototype's `data-*` hooks (they pointed every
+  option at the one filter the theme had rendered), and the group title is written into the
+  node that holds the theme's label instead of beside it ("Size Departments").
+  Option counts follow the prototype's format, so a theme that draws the brackets in CSS no
+  longer shows "((39))".
+- **Instant search on Luma/Blank: option labels and counts.** Luma renders the option label as a bare
+  text node and nests an "items" span inside the count, so the refill wrote the label into the wrong
+  span (every option showed the prototype's label) and printed literal brackets that Luma's CSS
+  draws again ("((11))"). The label now goes to the first real text node and the count follows the
+  prototype's format. A malformed percent-escape in the page URL no longer aborts the boot.
+- **Tests: data providers declared with `#[DataProvider]` attributes** (and static), so the suite
+  runs on PHPUnit 12 as well as 10; the `@dataProvider` annotations remain for older runners.
+- **Instant search: filters in the URL are applied on load.** `filter[color]=58,59` (the shape
+  `syncUrl`/`filterHref` write) and `filter[color][]=58` are read into the initial state, so a
+  reload, shared link or middle-clicked option no longer shows the unfiltered result set.
+
 ## [2.10.0] - 2026-09-04
 
 ### Added

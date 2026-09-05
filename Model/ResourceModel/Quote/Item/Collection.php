@@ -9,7 +9,6 @@ use Magento\Catalog\Model\Product\Attribute\Source\Status as ProductStatus;
 use Magento\Catalog\Model\ResourceModel\Product\Collection as ProductCollection;
 use Magento\Framework\App\Area;
 use Magento\Framework\App\Config\ScopeConfigInterface;
-use Magento\Framework\App\ObjectManager;
 use Magento\Framework\App\State as AppState;
 use Magento\Framework\Exception\NoSuchEntityException;
 use Magento\Quote\Model\Quote\Item as QuoteItem;
@@ -69,9 +68,10 @@ class Collection extends \Magento\Quote\Model\ResourceModel\Quote\Item\Collectio
     private $osRecollectQuote = false;
 
     /**
-     * FastMagento deps are appended AFTER all of core's params, nullable with an
-     * ObjectManager fallback, so the parent's parameter positions are preserved (a preference
-     * subclass must forward the full core signature). Same pattern as ShellNoEavProduct.
+     * FastMagento deps are appended AFTER all of core's params so the parent's parameter
+     * positions are preserved (a preference subclass must forward the full core signature).
+     * They are optional in the signature only for that reason: DI does not auto-resolve optional
+     * parameters, so etc/di.xml supplies them explicitly. Same pattern as ShellNoEavProduct.
      *
      * @SuppressWarnings(PHPMD.ExcessiveParameterList)
      */
@@ -108,12 +108,18 @@ class Collection extends \Magento\Quote\Model\ResourceModel\Quote\Item\Collectio
             $storeManager,
             $config
         );
-        $om = ObjectManager::getInstance();
-        $this->osFetcher = $osFetcher ?? $om->get(OpenSearchPdpFetcher::class);
-        $this->osShellBuilder = $osShellBuilder ?? $om->get(ShellProductBuilder::class);
-        $this->osAppState = $osAppState ?? $om->get(AppState::class);
-        $this->osScopeConfig = $osScopeConfig ?? $om->get(ScopeConfigInterface::class);
-        $this->osQuoteModelConfig = $osQuoteModelConfig ?? $om->get(\Magento\Quote\Model\Config::class);
+        foreach (['osFetcher', 'osShellBuilder', 'osAppState', 'osScopeConfig', 'osQuoteModelConfig'] as $name) {
+            if ($$name === null) {
+                throw new \LogicException(
+                    sprintf('%s requires $%s; it is declared in ParkkTech_FastMagento etc/di.xml.', self::class, $name)
+                );
+            }
+        }
+        $this->osFetcher = $osFetcher;
+        $this->osShellBuilder = $osShellBuilder;
+        $this->osAppState = $osAppState;
+        $this->osScopeConfig = $osScopeConfig;
+        $this->osQuoteModelConfig = $osQuoteModelConfig;
     }
 
     /**

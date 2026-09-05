@@ -287,23 +287,15 @@
         hydration-only change: the id list, ordering, pagination and layered-nav counts already
         come from OpenSearch on a 2.4 install with a search engine configured.
     -->
-    <preference for="Magento\CatalogSearch\Model\ResourceModel\Fulltext\Collection"
-                type="ParkkTech\FastMagento\Model\ResourceModel\Fulltext\Collection"/>
-
     <!--
-        The preference above is NOT enough on its own. Magento's search engine modules build the
-        listing collection through VIRTUAL TYPES (`elasticsearchCategoryCollection`,
-        `elasticsearchFulltextSearchCollection`, ...) whose `type` names the core class directly.
-        Virtual types are resolved by name and never go through preference resolution, so a
-        preference on the core class is silently bypassed for exactly the pages we care about.
-        Re-pointing each virtual type's `type` here keeps every argument those modules configured
-        (search request name, filter-strategy checker, resolver factories) and only swaps the base
-        class. Both engines are covered because Magento_OpenSearch reuses the elasticsearch* names.
+        Hydration is a PLUGIN on the core fulltext collection (declared at the end of this file),
+        not a preference. A preference replaced the class, and Magento's search-engine modules
+        build the listing collections through virtual types (`elasticsearchCategoryCollection`,
+        `elasticsearchFulltextSearchCollection`) that other modules (Amasty, Swissup, site code)
+        also re-point, so whichever di.xml loaded last decided whether listings were served. A
+        plugin applies to the core class, every subclass and every virtual type built from it,
+        whoever owns them, so the engine virtual types are left exactly as core defines them.
     -->
-    <virtualType name="elasticsearchCategoryCollection"
-                 type="ParkkTech\FastMagento\Model\ResourceModel\Fulltext\Collection"/>
-    <virtualType name="elasticsearchFulltextSearchCollection"
-                 type="ParkkTech\FastMagento\Model\ResourceModel\Fulltext\Collection"/>
     <virtualType name="Magento\CatalogSearch\Model\ResourceModel\Fulltext\SearchCollection"
                  type="ParkkTech\FastMagento\Model\ResourceModel\Fulltext\Collection"/>
 
@@ -391,5 +383,17 @@
     <type name="Magento\Catalog\Model\ResourceModel\Product\Collection">
         <plugin name="fastmagento_widget_collection_from_index"
                 type="ParkkTech\FastMagento\Plugin\WidgetProductCollectionPlugin" sortOrder="20"/>
+    </type>
+    <!-- Intercept entity hydration before any SQL load, on whatever collection class is actually
+         resolved (core, a third-party subclass, or a virtual type). Replaces the former preference. -->
+    <type name="Magento\CatalogSearch\Model\ResourceModel\Fulltext\Collection">
+        <plugin name="fastmagento_collection_entity_hydration"
+                type="ParkkTech\FastMagento\Plugin\CollectionEntityHydration" sortOrder="5"/>
+    </type>
+    <!-- Fill an empty configurable image configuration from the indexed child documents so a
+         theme block that returns no images does not fall back to a swatch AJAX round-trip. -->
+    <type name="Magento\ConfigurableProduct\Block\Product\View\Type\Configurable">
+        <plugin name="fastmagento_inline_configurable_images"
+                type="ParkkTech\FastMagento\Plugin\ConfigurableImagesPlugin" sortOrder="100"/>
     </type>
 </config>

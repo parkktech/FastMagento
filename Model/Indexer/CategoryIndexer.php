@@ -75,13 +75,8 @@ class CategoryIndexer implements ActionInterface, MviewActionInterface
         private readonly OpenSearchConfig $openSearchConfig,
         private readonly WriteLog $writeLog,
         private readonly ScopeConfigInterface $scopeConfig,
-        // Optional-with-fallback so an existing install's compiled DI survives the upgrade
-        // that introduces it.
-        private ?\ParkkTech\FastMagento\Model\OpenSearch\IndexSettings $indexSettings = null
+        private readonly \ParkkTech\FastMagento\Model\OpenSearch\IndexSettings $indexSettings
     ) {
-        $this->indexSettings = $indexSettings
-            ?? \Magento\Framework\App\ObjectManager::getInstance()
-                ->get(\ParkkTech\FastMagento\Model\OpenSearch\IndexSettings::class);
     }
 
     /** Cached category url suffix for the index store (e.g. ".html"). */

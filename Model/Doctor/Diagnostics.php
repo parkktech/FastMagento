@@ -532,25 +532,29 @@ class Diagnostics
 
         $out = [Check::ok(self::G_PLP, 'Category listing source', 'OpenSearch (falls back to EAV per page on any index miss)')];
 
-        // The listing swap only takes effect if the search engine's collection virtual types were
-        // successfully re-pointed; a third-party module redefining them would silently win.
-        $expected = \ParkkTech\FastMagento\Model\ResourceModel\Fulltext\Collection::class;
+        // Hydration is a plugin on the core fulltext collection, so it reaches whatever class the
+        // engine's listing virtual type resolves to, as long as that class inherits from core.
+        $expected = \Magento\CatalogSearch\Model\ResourceModel\Fulltext\Collection::class;
         try {
             // Must read the FRONTEND area config: the override is frontend-scoped on purpose, so
             // the global/CLI config legitimately still shows the core class and reading it here
             // would report a failure on a perfectly healthy install.
             $frontendConfig = $this->configLoader->load(\Magento\Framework\App\Area::AREA_FRONTEND);
             $actual = $frontendConfig['virtualTypes']['elasticsearchCategoryCollection'] ?? null;
-            if ($actual !== null && ltrim((string) $actual, '\\') !== ltrim($expected, '\\')) {
+            // A virtual type may be built from another virtual type; follow the chain to a class.
+            for ($hops = 0; $actual !== null && isset($frontendConfig['virtualTypes'][$actual]) && $hops < 10; $hops++) {
+                $actual = $frontendConfig['virtualTypes'][$actual];
+            }
+            if ($actual !== null && !is_a((string)$actual, $expected, true)) {
                 $out[] = Check::fail(
                     self::G_PLP,
                     'Listing collection class',
                     sprintf('elasticsearchCategoryCollection resolves to %s', $actual),
-                    'Another module re-points this virtual type, so listings still load through EAV. '
-                    . 'Whichever module loads last wins — adjust module sequence or merge the override.'
+                    'The resolved collection does not inherit the supported fulltext hydration hook. '
+                    . 'Review its load implementation and the FastMagento collection plugin.'
                 );
             } else {
-                $out[] = Check::ok(self::G_PLP, 'Listing collection class', 'FastMagento collection is wired in');
+                $out[] = Check::ok(self::G_PLP, 'Listing collection class', 'Fulltext collection supports FastMagento pre-SQL hydration; third-party class retained');
             }
         } catch (\Throwable $e) {
             $out[] = Check::skip(self::G_PLP, 'Listing collection class', $e->getMessage());
