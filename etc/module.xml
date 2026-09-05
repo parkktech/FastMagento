@@ -9,6 +9,9 @@
         <module name="Magento_AdvancedSearch"/>
         <module name="Magento_Search"/>
         <module name="Magento_Catalog"/>
+        <!-- Optional Commerce ordering: absent modules are ignored by Magento's loader. -->
+        <module name="Magento_CatalogStaging"/>
+        <module name="Magento_Staging"/>
         <!-- Ensure we override third-party search modules like Amasty, Mageworx, Mirasvit -->
         <module name="Amasty_Xsearch"/>
         <module name="Mirasvit_Search"/>

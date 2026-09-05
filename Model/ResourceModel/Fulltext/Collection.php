@@ -10,22 +10,12 @@ use Magento\Framework\App\State;
 use ParkkTech\FastMagento\Model\Plp\ListingHydrator;
 
 /**
- * Product listing collection that hydrates its items from OpenSearch instead of EAV.
+ * Legacy concrete collection retained for existing integrations.
  *
- * WHY A PREFERENCE AND NOT A PLUGIN
- * ---------------------------------
- * The only useful seam is `_loadEntities()` — the step that turns the ids the search engine
- * already returned into product objects. It is declared public on the core class, but Magento's
- * interception code generator skips every method whose name starts with `_`, so the generated
- * `Collection\Interceptor` wraps only `load()` and `getCurPage()`. A plugin on `_loadEntities`
- * is silently never called. Overriding it requires replacing the class.
- *
- * The preference is registered in `etc/frontend/di.xml` only, so the admin, CLI and integration
- * code keep the core collection untouched.
- *
- * Note for integrators: if another extension also sets a preference for this class, the two will
- * conflict (last one wins, as with any preference). `bin/magento fastmagento:doctor` reports which
- * class is actually in use so the clash is visible rather than mysterious.
+ * New installations use CollectionEntityHydration on the resolved fulltext collection. Magento
+ * intercepts public _loadEntities(), so another module's subclass and virtual-type arguments can
+ * remain intact while the SAME ListingHydrator skips entity/EAV SQL. No replacement preference
+ * is required. This wrapper remains available to integrations that already extend it.
  */
 class Collection extends CoreFulltextCollection
 {

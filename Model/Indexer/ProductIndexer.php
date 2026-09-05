@@ -83,7 +83,7 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
         private ProductRepositoryInterface $productRepository,
         private readonly EntityLink $entityLink,
         private ?\Magento\Framework\Stdlib\DateTime\TimezoneInterface $localeDate = null,
-        private ?\ParkkTech\FastMagento\Model\OpenSearch\IndexSettings $indexSettings = null
+        private ?\ParkkTech\FastMagento\Model\OpenSearch\IndexSettings $indexSettings = null,
     ) {
         $this->localeDate = $localeDate
             ?? \Magento\Framework\App\ObjectManager::getInstance()
@@ -130,6 +130,7 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
 
     public function executeRow($id): void
     {
+        $this->extensionProjection()->reset();
         try {
             $id = (int)$id;
             /** @var Product $product */
@@ -160,6 +161,7 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
 
     public function execute($ids)
     {
+        $this->extensionProjection()->reset();
         if (empty($ids)) {
             // Stream entity ids set-based; never materialise full products just to list ids.
             $connection = $this->productCollectionFactory->create()->getConnection();
@@ -260,6 +262,7 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
      */
     public function indexProductObject(\Magento\Catalog\Model\Product $product): void
     {
+        $this->extensionProjection()->reset();
         try {
             if (!$product->getId()) {
                 return;
@@ -426,8 +429,9 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
                     $docs[] = ['id' => (string) $product->getId(), 'body' => $body];
                 } catch (\Throwable $e) {
                     $this->writeLog->writeErrorLog(
-                        'Product ID: ' . $id . ' skipped during batched indexing (composite): ' . $e->getMessage()
+                        'Product ID: ' . $id . ' failed during batched indexing (composite): ' . $e->getMessage()
                     );
+                    throw $e;
                 }
                 $flush($docs);
             }
@@ -465,8 +469,10 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
                         $docs[] = ['id' => (string) $product->getId(), 'body' => $body];
                     } catch (\Throwable $e) {
                         $this->writeLog->writeErrorLog(
-                            'Product ID: ' . $product->getId() . ' skipped during batched indexing: ' . $e->getMessage()
+                            'Product ID: ' . $product->getId() . ' failed during batched indexing: ' . $e->getMessage()
                         );
+                        $this->batchCtx = null;
+                        throw $e;
                     }
                     $flush($docs);
                 }
@@ -1088,62 +1094,11 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
 
     private function bulkIndexNDJSON($client, string $indexName, array $docs): void
     {
-        if (!$docs) {
-            $this->logger->error('No documents to index.');
-            return;
-        }
-        // OpenSearch rejects a bulk body over http.max_content_length (100MB default) with a 413.
-        // A page of big configurables (hundreds/thousands of children each) can blow past that, so
-        // send in payload-size-bounded sub-batches no matter how many docs are passed in.
-        $maxBytes = 20 * 1024 * 1024; // 20MB — safely under the 100MB default
-        $lines = '';
-        $bytes = 0;
-        $send = function () use (&$lines, &$bytes, $client) {
-            if ($lines === '') {
-                return;
-            }
-            try {
-                $response = $client->getOpenSearchClient()->bulk(['body' => $lines . "\n"]);
-                if (isset($response['errors']) && $response['errors']) {
-                    // A per-item rejection (mapping limit, type conflict, rejected execution) does
-                    // NOT fail the bulk request as a whole — OpenSearch returns 200 with errors:true
-                    // and the bad items simply missing. Logging and continuing here is what made a
-                    // partially-built index report as a successful reindex, so throw instead: the
-                    // indexer is then left invalid and the admin shows a reindex-required notice.
-                    throw new LocalizedException(
-                        __('OpenSearch rejected %1 document(s): %2', ...$this->summarizeBulkErrors($response))
-                    );
-                }
-            } catch (LocalizedException $e) {
-                $this->logger->error('[FastMagento] ' . $e->getMessage());
-                throw $e;
-            } catch (\Exception $e) {
-                $this->logger->error('Bulk NDJSON error: ' . $e->getMessage());
-                throw new LocalizedException(__('Bulk NDJSON error: %1', $e->getMessage()));
-            }
-            $lines = '';
-            $bytes = 0;
-        };
-        foreach ($docs as $doc) {
-            $entry = json_encode(['index' => ['_id' => $doc['id'], '_index' => $indexName]]) . "\n"
-                . json_encode($doc['body']) . "\n";
-            if ($bytes > 0 && $bytes + strlen($entry) > $maxBytes) {
-                $send();
-            }
-            $lines .= $entry;
-            $bytes += strlen($entry);
-        }
-        $send();
+        $writer = \Magento\Framework\App\ObjectManager::getInstance()
+            ->get(\ParkkTech\FastMagento\Model\OpenSearch\BoundedBulkWriter::class);
+        $writer->write($client->getOpenSearchClient(), $indexName, $docs);
     }
 
-    /**
-     * Reduce a bulk response to [failed item count, distinct reasons] for a single actionable
-     * error message. The raw response for a large batch is megabytes of near-identical items, so
-     * dumping it (as this used to) buries the one line that matters.
-     *
-     * @param array<string, mixed> $response
-     * @return array{0: int, 1: string}
-     */
     private function summarizeBulkErrors(array $response): array
     {
         $failed = 0;
@@ -1213,6 +1168,7 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
                     // Canonical request path, mapped as a keyword so the URL-rewrite router can
                     // resolve a product URL with one term query (CategoryUrlFinderPlugin).
                     'request_path' => ['type' => 'keyword', 'ignore_above' => 1024],
+                    'fm_extension_attributes' => ['type' => 'object', 'enabled' => false],
                     // Related / up-sell / cross-sell id lists, in merchant position order.
                     // Mapped explicitly because the index is `dynamic: false`; the read path only
                     // ever reads them back out of _source, never queries them, so `index: false`
@@ -1297,9 +1253,15 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
     }
 
 
+    private function extensionProjection(): \ParkkTech\FastMagento\Model\Projection\ExtensionAttributes
+    {
+        return \Magento\Framework\App\ObjectManager::getInstance()->get(\ParkkTech\FastMagento\Model\Projection\ExtensionAttributes::class);
+    }
+
     private function prepareDoc(\Magento\Catalog\Model\Product $product): array
     {
         $productData = $product->getData();
+        $productData['fm_extension_attributes'] = $this->extensionProjection()->project($product);
         // Drop the product type's RUNTIME object caches (`_cache_instance_configurable_attributes`,
         // `_cache_instance_used_product_attributes`, …). getData() carries them once the type
         // instance has run, and serializing them into the index bloats the doc AND, served back on
@@ -1811,6 +1773,10 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
             $stock = $stockMap[$cid] ?? ['qty' => 0.0, 'is_in_stock' => false];
             $childProductsArray[] = [
                 'entity_id' => $cid,
+                'fm_extension_attributes' => $this->extensionProjection()->project($child),
+                // The existing extension projection already read these at index time.
+                // Retain them for inline swatch galleries; do not load them on the storefront.
+                'media_gallery' => $child->getData('media_gallery') ?? ['images' => [], 'values' => []],
                 'sku' => $child->getSku(),
                 'name' => $child->getName(),
                 'price' => (float)$child->getPrice(),
@@ -1936,7 +1902,7 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
         $select
             ->columns(['entity_id' => new \Zend_Db_Expr($pid)])
             ->where($pid . ' IN (?)', $productIds)
-            ->where('tp.website_id IN (?)', [0, 1]);
+            ->where('tp.website_id IN (?)', [0, (int)$this->storeManager->getStore($this->getIndexStoreId())->getWebsiteId()]);
 
         $map = [];
         foreach ($connection->fetchAll($select) as $row) {

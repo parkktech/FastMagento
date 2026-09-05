@@ -55,7 +55,7 @@ class CategoryModelBuilder
         foreach ($attrs as $code => $value) {
             $data[$code] = $value;
         }
-        $data['entity_id'] = $categoryId;
+        $data['entity_id'] = (string)$categoryId;
         $data['path_ids'] = array_map('intval', (array) ($data['path_ids'] ?? []));
 
         /** @var Category $category */

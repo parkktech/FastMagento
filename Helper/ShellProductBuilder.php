@@ -475,6 +475,9 @@ class ShellProductBuilder
         // core treat arrays as attribute objects the cart page 500s in getUsedProductAttributes
         // getId(). Core rebuilds them live from the OS-hydrated data when next needed.
         $product->stripRuntimeCaches();
+        \Magento\Framework\App\ObjectManager::getInstance()
+            ->get(\ParkkTech\FastMagento\Model\Projection\ExtensionAttributes::class)
+            ->hydrate($product, $doc['fm_extension_attributes'] ?? []);
 
         return $product;
     }

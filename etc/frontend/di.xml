@@ -1,198 +1,101 @@
 <?xml version="1.0"?>
 <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
         xsi:noNamespaceSchemaLocation="urn:magento:framework:ObjectManager/etc/config.xsd">
-
-    <!--
-       FRONTEND SCOPE:
-       - We only want to override \Magento\Catalog\Model\Product with our Shell plugin
-         on the front end (not in admin).
-       - We also override the front-end product view controller.
-    -->
-
-
-
-    <!-- Ensure backend/indexer uses MySQL resource collection -->
-<!--    <preference for="Magento\Catalog\Model\ResourceModel\Product\Collection"
-                    type="ParkkTech\FastMagento\Model\ResourceModel\Product\IndexerProductCollection">
-        <scope>frontend</scope>
-    </preference>-->
-
-    <!-- Plugin: Use OpenSearch Collection for Product Listings (PLP, Search, etc.) -->
-    <type name="Magento\Catalog\Model\ResourceModel\Product\CollectionFactory">
-        <plugin name="frontend_product_collection_plugin"
-                type="ParkkTech\FastMagento\Plugin\FrontendProductCollectionPlugin"
-                sortOrder="10"/>
-    </type>
-
-    <!-- Plugin: Serve Related / Up-sell / Cross-sell (product-link) collections from OpenSearch -->
     <type name="Magento\Catalog\Model\ResourceModel\Product\Link\Product\Collection">
         <plugin name="fastmagento_link_product_collection"
                 type="ParkkTech\FastMagento\Plugin\LinkProductCollectionPlugin"
                 sortOrder="10"/>
     </type>
-
-    <!-- Plugin: Use OpenSearch for Individual Product Retrieval (PDP, Cart, Checkout) -->
     <type name="Magento\Catalog\Model\Product">
         <plugin name="frontend_product_plugin"
                 type="ParkkTech\FastMagento\Plugin\FrontendProductPlugin"
                 sortOrder="10"/>
     </type>
-
-    <!-- Override TierPrice Only on Frontend -->
     <preference for="Magento\Catalog\Pricing\Price\TierPrice"
                 type="ParkkTech\FastMagento\Pricing\Price\TierPrice" />
-
-    <!-- Override CatalogRulePrice Only on Frontend -->
     <preference for="Magento\CatalogRule\Pricing\Price\CatalogRulePrice"
                 type="ParkkTech\FastMagento\Pricing\Price\CatalogRulePrice" />
-
-    <!-- Override SpecialPrice on the frontend so a shell's special_price=0 (no special
-         price) is treated as "none" instead of a $0 special that zeroes out FinalPrice. -->
     <preference for="Magento\Catalog\Pricing\Price\SpecialPrice"
                 type="ParkkTech\FastMagento\Pricing\Price\SpecialPrice" />
-
-    <!-- Serve the configurable price resolver from OpenSearch child shells (carrying
-         indexed catalog-rule + tier price) instead of a native child collection. Kills the
-         per-child catalogrule_product_price + catalog_product_entity_tier_price N+1 on the
-         configurable PDP price path. -->
-    <!-- Review stars: one review_entity_summary read per product card without this. -->
     <type name="Magento\Review\Model\ReviewSummary">
         <plugin name="fastmagento_review_summary"
                 type="ParkkTech\FastMagento\Plugin\Review\ReviewSummaryPlugin"/>
     </type>
-
-    <!--
-        Configurable price CEILING. The "as low as" floor comes from LowestPriceOptionsProvider
-        below; the max is computed by a separate class that queries the price index directly, once
-        per configurable — the last per-product query left on a listing after it moved to OpenSearch.
-    -->
+    <type name="Magento\ConfigurableProduct\Block\Product\View\Type\Configurable">
+        <plugin name="fastmagento_inline_configurable_images"
+                type="ParkkTech\FastMagento\Plugin\ConfigurableImagesPlugin" sortOrder="100"/>
+    </type>
     <type name="Magento\ConfigurableProduct\Model\ConfigurableMaxPriceCalculator">
         <plugin name="fastmagento_configurable_max_price"
                 type="ParkkTech\FastMagento\Plugin\ConfigurableMaxPriceCalculatorPlugin"/>
     </type>
-
     <type name="Magento\ConfigurableProduct\Pricing\Price\LowestPriceOptionsProvider">
         <plugin name="fastmagento_lowest_price_options"
                 type="ParkkTech\FastMagento\Plugin\LowestPriceOptionsProviderPlugin"
                 sortOrder="10"/>
     </type>
-
-    <!-- Override Configurable::getParentIdsByChild() Only on Frontend -->
     <preference for="Magento\ConfigurableProduct\Model\ResourceModel\Product\Type\Configurable"
                 type="ParkkTech\FastMagento\Model\Configurable\ConfigurableProductType" />
-    <!-- ParentIdResolver injected as a Proxy: ProductIndexer depends on this resource model
-         (ConfigurableResource), so a direct injection would form a construction cycle. -->
     <type name="ParkkTech\FastMagento\Model\Configurable\ConfigurableProductType">
         <arguments>
             <argument name="parentIdResolver" xsi:type="object">ParkkTech\FastMagento\Model\OpenSearch\ParentIdResolver\Proxy</argument>
         </arguments>
     </type>
-
-    <!-- Serve Grouped::getParentIdsByChild() from OpenSearch too (product sliders call it
-         per product alongside the configurable one). Shares ParentIdResolver's cache. -->
     <type name="Magento\GroupedProduct\Model\Product\Type\Grouped">
         <plugin name="fastmagento_grouped_parent_ids"
                 type="ParkkTech\FastMagento\Plugin\GroupedParentIdPlugin"
                 sortOrder="10"/>
     </type>
-
-    <!-- Frontend-only: collapse the per-category url_rewrite N+1 (mega-menu / breadcrumbs /
-         category tree each call $category->getUrl()) into one batched query per store. -->
     <type name="Magento\UrlRewrite\Model\UrlFinderInterface">
         <plugin name="fastmagento_category_url_finder"
                 type="ParkkTech\FastMagento\Plugin\CategoryUrlFinderPlugin"
                 sortOrder="10"/>
     </type>
-
-    <!-- Frontend-only: the layered-nav category filter re-loads the page's own category (4
-         queries) even though the controller already loaded it. See the plugin for the walk-through. -->
     <type name="Magento\Catalog\Model\Layer\Filter\DataProvider\Category">
         <plugin name="fastmagento_layer_category_data_provider"
                 type="ParkkTech\FastMagento\Plugin\LayerCategoryDataProviderPlugin"
                 sortOrder="10"/>
     </type>
-
-    <!-- Frontend-only: getChildrenCategories() builds a fresh collection on every call and the
-         category filter calls it twice per listing render. Memoise it per request. -->
     <type name="Magento\Catalog\Model\Category">
         <plugin name="fastmagento_category_children"
                 type="ParkkTech\FastMagento\Plugin\CategoryChildrenPlugin"
                 sortOrder="10"/>
     </type>
-
-    <!-- Frontend-only: serve category collection attribute values (name/url_key/is_active/
-         include_in_menu/is_anchor/all_children) from OpenSearch, skipping the native
-         catalog_category_entity_* UNION loads. Covers mega-menu, top-nav, breadcrumb
-         parents and layered-nav children; falls back to native on any unservable attr/item. -->
     <type name="Magento\Catalog\Model\ResourceModel\Category\Collection">
         <plugin name="fastmagento_category_attribute_load"
                 type="ParkkTech\FastMagento\Plugin\CategoryAttributeLoadPlugin"
                 sortOrder="10"/>
     </type>
-
-    <!-- Frontend-only: drop deleted/disabled/hidden products from the bestsellers report so
-         storefront widgets never surface unshoppable products. Admin reports keep every row
-         (this plugin is scoped to the frontend area). -->
     <type name="Magento\Sales\Model\ResourceModel\Report\Bestsellers\Collection">
         <plugin name="fastmagento_bestsellers_frontend_filter"
                 type="ParkkTech\FastMagento\Plugin\BestsellersFrontendFilterPlugin"
                 sortOrder="10"/>
     </type>
-
-    <!-- Override Magento’s Configurable Product Type -->
     <preference for="Magento\ConfigurableProduct\Model\Product\Type\Configurable"
                 type="ParkkTech\FastMagento\Model\Product\Type\Configurable" />
-
-    <!-- Disable core's used-products cache on the frontend. It serializes each child's
-         getData() and, on cache HIT, rebuilds children as NATIVE Product objects
-         (productFactory->create()->setData()) — stripping the OS shell type AND the doc's
-         indexed catalog_rule_price/tier_prices. Those native children then resolve their
-         catalog-rule + tier price from MySQL, one query each: the ~660-pair N+1 that
-         reappears on every cached configurable price render (isTierPriceApplicable /
-         hasSpecialPrice iterate getUsedProducts). Our getUsedProducts already serves the
-         children as shells from the per-request registry (no DB), so this cache is both
-         redundant and harmful. -->
     <type name="Magento\ConfigurableProduct\Model\Product\Type\Configurable">
         <plugin name="used_products_cache" disabled="true"/>
     </type>
-
-    <!-- Use OpenSearch for StockRegistry on the frontend -->
   <preference for="Magento\CatalogInventory\Api\StockRegistryInterface"
                 type="ParkkTech\FastMagento\Model\OpenSearchStockRegistry" />
-
-    <!-- Keep a composite parent (configurable/grouped/bundle) sellable at the cart stock gate
-         when OpenSearch (its children) says it is, correcting a stale native/MSI parent
-         salability that otherwise makes QuantityValidator reject add-to-cart with "This product
-         is out of stock." sortOrder 100 runs this AFTER MSI's AdaptGetStockStatusPlugin (no
-         sortOrder = PHP_INT_MIN) so it has the final say. See the plugin class for safety notes
-         (only lifts the coarse parent gate; the purchased child is still validated natively). -->
     <type name="Magento\CatalogInventory\Api\StockRegistryInterface">
         <plugin name="fastmagento_composite_parent_stock_status"
                 type="ParkkTech\FastMagento\Plugin\Inventory\CompositeParentStockStatusPlugin"
                 sortOrder="100"/>
     </type>
-
-
-
-    <!-- Disabled: conflicted with frontend_product_plugin (both aroundLoad on
-         Product at sortOrder 10) and returned a bare product without the OpenSearch
-         fetch. FrontendProductPlugin is the single load choke point. -->
     <type name="Magento\Catalog\Model\Product">
         <plugin name="shell_product_override"
                 type="ParkkTech\FastMagento\Plugin\ShellProductPlugin"
                 sortOrder="10" disabled="true"/>
     </type>
-
     <type name="Magento\Catalog\Api\ProductRepositoryInterface">
         <plugin name="shell_product_override" type="ParkkTech\FastMagento\Plugin\ProductRepositoryPlugin" sortOrder="10" disabled="false"/>
     </type>
-
     <preference for="Magento\ConfigurableProduct\Model\ResourceModel\Product\Type\Configurable\Attribute\Collection"
                 type="ParkkTech\FastMagento\Model\ResourceModel\Product\Type\Configurable\Attribute\Collection"/>
     <type name="Magento\Catalog\Model\Product">
         <plugin name="catalogInventoryAfterLoad" disabled="true"/>
     </type>
-
     <type name="Magento\Checkout\Model\Cart">
         <plugin name="fastmagento_set_custom_price" type="ParkkTech\FastMagento\Plugin\Checkout\AddProductPlugin" />
     </type>
@@ -200,174 +103,55 @@
         <plugin name="inject_price_on_get_product" type="ParkkTech\FastMagento\Plugin\Quote\QuoteItemPlugin" />
         <plugin name="fastmagento_configurable_line_name" type="ParkkTech\FastMagento\Plugin\Quote\ConfigurableLineNamePlugin" />
     </type>
-
-    <!-- The quote-item OS-serving preference moved to the GLOBAL etc/di.xml so it also covers
-         the webapi_rest / graphql checkout calls (area gated inside the class). -->
-
-    <!-- Override Magento's front-end Product View Controller -->
-<!--
-    <preference for="Magento\Catalog\Controller\Product\View"
-                type="ParkkTech\FastMagento\Controller\Product\View" />
--->
-
-
-    <!-- Define ShellProduct for global usage
-     (the front-end plugin references this class).
-     The 'data' argument is an example.
--->
-<!--
-    <type name="ParkkTech\FastMagento\Model\ShellProduct\ShellProduct">
-        <arguments>
-            <argument name="data" xsi:type="array">{}</argument>
-        </arguments>
-    </type>
--->
-
-    <!-- ShellNoEavProduct (global) -->
-<!--    <type name="ParkkTech\FastMagento\Model\ShellProduct\ShellNoEavProduct" />-->
-
-    <!-- ShellProductBuilder with correct dependencies -->
-<!--
-    <type name="ParkkTech\FastMagento\Helper\ShellProductBuilder">
-        <arguments>
-            <argument name="shellPriceFactory" xsi:type="object">
-                ParkkTech\FastMagento\Model\ShellProduct\ShellPriceFactory
-            </argument>
-            <argument name="shellDataProductFactory" xsi:type="object">
-                ParkkTech\FastMagento\Model\ShellProduct\ShellDataProductFactory
-            </argument>
-        </arguments>
-    </type>
--->
-
-    <!-- ShellPrice definition with msrp objects -->
-<!--    <type name="ParkkTech\FastMagento\Model\ShellProduct\ShellPrice">
-        <arguments>
-            <argument name="msrpConfig" xsi:type="object">Magento\Msrp\Model\Config</argument>
-            <argument name="msrp" xsi:type="object">Magento\Msrp\Model\Msrp</argument>
-            <argument name="productOptions" xsi:type="null"/>
-        </arguments>
-    </type>-->
-
-    <!-- ShellDataProduct -->
-<!--    <type name="ParkkTech\FastMagento\Model\ShellProduct\ShellDataProduct">
-        <arguments>
-            <argument name="urlModel" xsi:type="object">Magento\Catalog\Model\Product\Url</argument>
-        </arguments>
-    </type>-->
-
-    <!--
-      GLOBAL SCOPE:
-      - Virtual types for your shell product
-      - Indexer registry
-      - Default definitions for ShellProduct, ShellPrice, etc.
-      - ShellProductBuilder, etc.
-   -->
-
-    <!-- Virtual type for shell product (global) -->
-<!--    <virtualType name="ParkkTech\FastMagento\Model\ShellProduct\VirtualShellProduct"
-                 type="ParkkTech\FastMagento\Model\ShellProduct\ShellProduct">
-        <arguments>
-            <argument name="categoryCollectionFactory" xsi:type="object">
-                Magento\Catalog\Model\ResourceModel\Category\CollectionFactory
-            </argument>
-        </arguments>
-    </virtualType>-->
-
-    <!-- Serve select/multiselect option labels from the OpenSearch dictionary (frontend only),
-         removing the residual eav_attribute_option(_value) loads on served PDP attributes,
-         layered-nav facets and swatches. Falls back to native on any miss. -->
     <type name="Magento\Eav\Model\Entity\Attribute\Source\Table">
         <plugin name="fastmagento_option_dictionary"
                 type="ParkkTech\FastMagento\Plugin\Eav\SourceOptionPlugin" sortOrder="10"/>
     </type>
-
-    <!--
-        Product listing served from OpenSearch. See Model\Plp\ListingHydrator for why this is a
-        hydration-only change: the id list, ordering, pagination and layered-nav counts already
-        come from OpenSearch on a 2.4 install with a search engine configured.
-    -->
-    <preference for="Magento\CatalogSearch\Model\ResourceModel\Fulltext\Collection"
-                type="ParkkTech\FastMagento\Model\ResourceModel\Fulltext\Collection"/>
-
-    <!--
-        The preference above is NOT enough on its own. Magento's search engine modules build the
-        listing collection through VIRTUAL TYPES (`elasticsearchCategoryCollection`,
-        `elasticsearchFulltextSearchCollection`, ...) whose `type` names the core class directly.
-        Virtual types are resolved by name and never go through preference resolution, so a
-        preference on the core class is silently bypassed for exactly the pages we care about.
-        Re-pointing each virtual type's `type` here keeps every argument those modules configured
-        (search request name, filter-strategy checker, resolver factories) and only swaps the base
-        class. Both engines are covered because Magento_OpenSearch reuses the elasticsearch* names.
-    -->
-    <virtualType name="elasticsearchCategoryCollection"
-                 type="ParkkTech\FastMagento\Model\ResourceModel\Fulltext\Collection"/>
-    <virtualType name="elasticsearchFulltextSearchCollection"
-                 type="ParkkTech\FastMagento\Model\ResourceModel\Fulltext\Collection"/>
     <virtualType name="Magento\CatalogSearch\Model\ResourceModel\Fulltext\SearchCollection"
                  type="ParkkTech\FastMagento\Model\ResourceModel\Fulltext\Collection"/>
-
-    <!-- Bundle up-sell: answer "is this product inside any bundle?" from the indexed
-         fm_bundle_parents field instead of catalog_product_bundle_selection. -->
     <type name="Magento\Bundle\Model\ResourceModel\Selection">
         <plugin name="fastmagento_bundle_selection_parent_ids"
                 type="ParkkTech\FastMagento\Plugin\Bundle\SelectionParentIdsPlugin"
                 sortOrder="10"/>
     </type>
-    <!-- Listing special-price badges: compute from the indexed price/final_price instead of the
-         bulk price-index query. -->
     <type name="Magento\Catalog\Pricing\Price\SpecialPriceBulkResolverInterface">
         <plugin name="fastmagento_special_price_bulk"
                 type="ParkkTech\FastMagento\Plugin\SpecialPriceBulkResolverPlugin"
                 sortOrder="10"/>
     </type>
-    <!-- Review count from the indexed reviews_count instead of a COUNT over review tables. -->
     <type name="Magento\Review\Block\Product\Review">
         <plugin name="fastmagento_review_collection_size"
                 type="ParkkTech\FastMagento\Plugin\Review\ReviewCollectionSizePlugin" sortOrder="10"/>
     </type>
-    <!-- Product-page review list (and its pager total, and every review's rating votes) from
-         the review index in one search, instead of COUNT + SELECT + one vote query per review. -->
     <type name="Magento\Review\Model\ResourceModel\Review\Collection">
         <plugin name="fastmagento_review_list_from_index"
                 type="ParkkTech\FastMagento\Plugin\Review\ReviewListFromIndexPlugin" sortOrder="10"/>
     </type>
-    <!-- The review form's rating set from the cache (and once per request) instead of three
-         queries per product page; invalidated on rating save/delete in etc/di.xml. -->
     <type name="Magento\Review\Block\Form">
         <plugin name="fastmagento_ratings_cache"
                 type="ParkkTech\FastMagento\Plugin\Review\RatingsCachePlugin" sortOrder="10"/>
     </type>
-    <!-- MSRP apply-to list via the cached EAV config instead of four attribute-load queries. -->
     <type name="Magento\Msrp\Model\Msrp">
         <plugin name="fastmagento_msrp_can_apply"
                 type="ParkkTech\FastMagento\Plugin\Msrp\CanApplyToProductPlugin" sortOrder="10"/>
     </type>
-    <!-- Captcha attempt count: once per request, not once per protected form. -->
     <type name="Magento\Captcha\Model\ResourceModel\Log">
         <plugin name="fastmagento_captcha_attempts_memo"
                 type="ParkkTech\FastMagento\Plugin\Captcha\RemoteAttemptsMemoPlugin" sortOrder="10"/>
     </type>
-    <!-- Category membership from the served document's category_ids. -->
     <type name="Magento\Catalog\Model\Product">
         <plugin name="fastmagento_can_be_show_in_category"
                 type="ParkkTech\FastMagento\Plugin\CanBeShowInCategoryPlugin" sortOrder="10"/>
     </type>
-    <!-- Category EAV attribute values from the index instead of the per-backend-type UNION.
-         Scoped to categories inside the plugin; products and other EAV entities are untouched. -->
     <type name="Magento\Eav\Model\ResourceModel\ReadHandler">
         <plugin name="fastmagento_category_read_handler"
                 type="ParkkTech\FastMagento\Plugin\Eav\CategoryReadHandlerPlugin" sortOrder="10"/>
     </type>
-    <!-- A partially preconfigured configurable (one attribute chosen, another left to the shopper)
-         makes core emit the unspecified attribute as null; drop those before the template. -->
     <type name="Magento\ConfigurableProduct\Model\ConfigurableAttributeData">
         <plugin name="parkktech_fastmagento_configurable_default_values"
                 type="ParkkTech\FastMagento\Plugin\ConfigurableDefaultValuesPlugin"
                 sortOrder="100"/>
     </type>
-
-    <!-- Category model, breadcrumb walk and design walk from the category index (storefront). -->
     <type name="Magento\Catalog\Model\CategoryRepository">
         <plugin name="fastmagento_category_repository_from_index"
                 type="ParkkTech\FastMagento\Plugin\CategoryRepositoryFromIndexPlugin" sortOrder="5"/>
@@ -376,20 +160,20 @@
         <plugin name="fastmagento_category_parents_from_index"
                 type="ParkkTech\FastMagento\Plugin\CategoryParentsFromIndexPlugin" sortOrder="5"/>
     </type>
-    <!-- Filterable-attribute list for the layer from the cache (covers the search subclass). -->
     <type name="Magento\Catalog\Model\Layer\Category\FilterableAttributeList">
         <plugin name="fastmagento_filterable_attributes_cache"
                 type="ParkkTech\FastMagento\Plugin\Layer\FilterableAttributeListCachePlugin" sortOrder="10"/>
     </type>
-    <!-- Swatch definitions from the attribute-option dictionary. -->
     <type name="Magento\Swatches\Helper\Data">
         <plugin name="fastmagento_swatches_from_index"
                 type="ParkkTech\FastMagento\Plugin\Swatches\SwatchesFromIndexPlugin" sortOrder="10"/>
     </type>
-    <!-- Category widget / slider collections (CMS widgets, Hyvä ProductList) served from the indexes:
-         ids from Magento's own search index, products from the FastMagento documents. -->
     <type name="Magento\Catalog\Model\ResourceModel\Product\Collection">
         <plugin name="fastmagento_widget_collection_from_index"
                 type="ParkkTech\FastMagento\Plugin\WidgetProductCollectionPlugin" sortOrder="20"/>
+    </type>
+    <!-- Intercept entity hydration before any SQL load, on the actual third-party subclass. -->
+    <type name="Magento\CatalogSearch\Model\ResourceModel\Fulltext\Collection">
+        <plugin name="fastmagento_collection_entity_hydration" type="ParkkTech\FastMagento\Plugin\CollectionEntityHydration" sortOrder="5"/>
     </type>
 </config>

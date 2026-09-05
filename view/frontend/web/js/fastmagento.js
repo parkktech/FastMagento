@@ -68,6 +68,29 @@
         return m ? decodeURIComponent(m[1].replace(/\+/g, ' ')) : '';
     }
 
+    /**
+     * Applied filters carried by the page URL, in the shape this script itself writes
+     * (`filter[color]=58,59`, see syncUrl/filterHref) and the one the instant endpoint reads
+     * (`filter[color][]=58`). Without this a reload, a shared link, or a middle-clicked option
+     * silently dropped every filter while the URL still claimed them.
+     */
+    function filtersFromLocation() {
+        var filters = {};
+        (window.location.search.replace(/^\?/, '').split('&')).forEach(function (pair) {
+            var eq = pair.indexOf('='),
+                key = decodeURIComponent((eq > -1 ? pair.slice(0, eq) : pair).replace(/\+/g, ' ')),
+                value = eq > -1 ? decodeURIComponent(pair.slice(eq + 1).replace(/\+/g, ' ')) : '',
+                match = key.match(/^filter\[([^\]]+)\](\[\])?$/);
+            if (!match) {
+                return;
+            }
+            filters[match[1]] = (filters[match[1]] || []).concat(
+                (match[2] ? [value] : value.split(',')).filter(Boolean)
+            );
+        });
+        return filters;
+    }
+
     function buildQuery(obj, prefix) {
         var parts = [];
         Object.keys(obj).forEach(function (key) {
@@ -301,7 +324,7 @@
             state = {
                 q: config.initialQuery || param('q') || '',
                 page: parseInt(param('p'), 10) || 1,
-                filters: {}
+                filters: filtersFromLocation()
             };
 
         function requestUrl() {
@@ -462,14 +485,28 @@
                 return;
             }
             target = el.querySelector('h2, h3') || el;
-            // First text node only, so an <span class="sr-only"> sibling survives.
-            for (var n = target.firstChild; n; n = n.nextSibling) {
-                if (n.nodeType === 3 && n.nodeValue.trim()) {
-                    n.nodeValue = label;
-                    return;
-                }
+            // The first non-empty text node, wherever the theme nests it (a bare heading, or a
+            // <span> inside it), so a screen-reader-only sibling survives. Inserting a new node
+            // instead left the prototype's own label beside ours ("Size Departments").
+            if (setFirstText(target, label)) {
+                return;
             }
             target.insertBefore(document.createTextNode(label), target.firstChild);
+        }
+
+        function setFirstText(node, text) {
+            var n;
+            for (n = node.firstChild; n; n = n.nextSibling) {
+                if (n.nodeType === 3 && n.nodeValue.trim()) {
+                    n.nodeValue = text;
+                    return true;
+                }
+                if (n.nodeType === 1 && !(n.classList && n.classList.contains('sr-only'))
+                    && setFirstText(n, text)) {
+                    return true;
+                }
+            }
+            return false;
         }
 
         /*
@@ -524,6 +561,7 @@
                 return;
             }
             e.preventDefault();
+            e.stopPropagation();
             params = new URLSearchParams((link.getAttribute('href') || '').split('?')[1] || '');
             next = {};
             params.forEach(function (value, key) {
@@ -559,6 +597,19 @@
             }
         }
 
+        function stripDataAttributes(el) {
+            var names = [],
+                i;
+            for (i = 0; i < el.attributes.length; i++) {
+                if (el.attributes[i].name.indexOf('data-') === 0) {
+                    names.push(el.attributes[i].name);
+                }
+            }
+            names.forEach(function (name) {
+                el.removeAttribute(name);
+            });
+        }
+
         function buildOption(proto, facet, opt, selected) {
             var li = proto.cloneNode(true),
                 link = li.querySelector('a') || li,
@@ -572,7 +623,11 @@
 
             labelEl.textContent = opt.label;
             if (count) {
-                count.textContent = '(' + opt.count + ')';
+                // Follow the prototype's own format: a theme that prints "(39)" gets the same,
+                // one that prints "39" and draws the brackets in CSS must not get "((39))".
+                count.textContent = /^\s*\(/.test(count.textContent || '')
+                    ? '(' + opt.count + ')'
+                    : String(opt.count);
             }
             if (link.tagName === 'A') {
                 link.setAttribute('href', filterHref(facet.attribute, opt.value));
@@ -583,6 +638,13 @@
             // inventing a translation, so drop it: the link's own text ("XS (39)") is then its
             // accessible name, which is accurate in every locale.
             link.removeAttribute('aria-label');
+            // The prototype's data-* attributes describe the option the theme rendered (its
+            // request var, value, ajax URL) and are what the theme's own layered-navigation
+            // script keys off. On a clone they would point every option at that one filter.
+            stripDataAttributes(link);
+            if (link !== li) {
+                stripDataAttributes(li);
+            }
             li.setAttribute('data-fm-facet', facet.attribute);
             li.setAttribute('data-fm-value', opt.value);
 
@@ -753,8 +815,16 @@
             // Grab the theme's markup BEFORE the first refill replaces it.
             facetProtos = captureProtos(facetHost);
             facetHost.addEventListener('change', onFacetChange);
-            facetHost.addEventListener('click', onStateClick);
-            facetHost.addEventListener('click', onFacetClick);
+            // Capture phase, and the handled click stops there: a theme's ajax layered
+            // navigation binds its own click handler to the very links we clone (Breeze mounts
+            // it after our first render, so the clones carry it) and would otherwise fetch the
+            // native, takeover-emptied results page and replace the grid and sidebar with it.
+            // The instant grid owns filtering on this page; our listener on the host runs
+            // before any listener on the link and ends the event once it has acted.
+            facetHost.addEventListener('click', function (e) {
+                onStateClick(e);
+                onFacetClick(e);
+            }, true);
             if (!facetProtos) {
                 // Self-contained rail: it needs our stylesheet, the theme's markup does not.
                 facetHost.classList.add('fm-facet-host');
@@ -771,10 +841,11 @@
                 value,
                 list,
                 idx;
-            if (!row) {
+            if (!row || e.defaultPrevented) {
                 return;
             }
             e.preventDefault();
+            e.stopPropagation();
             code = row.getAttribute('data-fm-facet');
             value = String(row.getAttribute('data-fm-value'));
             list = state.filters[code] || [];

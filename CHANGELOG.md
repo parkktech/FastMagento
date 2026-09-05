@@ -5,6 +5,52 @@ All notable changes to FastMagento are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Index-time extension attribute projection** (`Model\Projection\ExtensionAttributes`): declared
+  product extension attributes are projected into the OpenSearch document and rebuilt as typed
+  objects through the installed DI definitions, so storefront hydration needs no extension reader
+  calls.
+- **Inline configurable images from indexed child data** (`Plugin\ConfigurableImagesPlugin`): fills an
+  empty image configuration from the already-fetched child documents (a theme block returning `[]`
+  from `getOptionImages()` no longer forces a swatch AJAX round-trip); nonempty configurations are
+  preserved. Full variant galleries already read by the projector are retained in the index.
+- **Bounded bulk writer** (`Model\OpenSearch\BoundedBulkWriter`): bulk requests bounded by encoded
+  bytes, finite retry on transient rejection (429), permanent failures propagated.
+- **Commerce staging hooks**: relationship changelog rows translated from `row_id` to public entity
+  ids (`Plugin\Mview\RelationshipEntityId`), affected ids reprojected when scheduled updates apply.
+  The `Magento_Staging`/`Magento_CatalogStaging` sequence entries and plugins are optional; Open
+  Source installs are unaffected (verified: `setup:upgrade`, `setup:di:compile`, doctor, reindex and
+  page renders on Magento Open Source 2.4.9).
+
+### Changed
+- **Collection hydration is a plugin, not a preference.** `Plugin\CollectionEntityHydration` hydrates
+  at the public `_loadEntities()` seam of the resolved fulltext collection, so a third-party subclass
+  or virtual type keeps working. The `Fulltext\Collection` preference and the Elasticsearch virtual
+  types were removed; the class stays for integrations that extend it.
+- **Option dictionaries** use per-option documents and generation/alias publication; an existing
+  concrete index is replaced by the alias on the first rebuild.
+- **Tier prices** are indexed for the index store's website instead of hard-coded website 1.
+- `CategoryModelBuilder` keeps category ids string-valued to match strictly typed callers.
+
+### Fixed
+- **Instant search: theme-rendered facets on themes with an ajax layered navigation.** The theme's
+  layered-navigation script (Swissup Ajax Layered Navigation on Breeze, mounted after our first
+  render) bound its own click handler to the option links we clone, fetched the native results
+  page — emptied by the takeover — and replaced the grid and sidebar with it. Facet and
+  "currently filtering" clicks are now handled in the capture phase on the facet host and stop
+  there, the cloned option no longer carries the prototype's `data-*` hooks (they pointed every
+  option at the one filter the theme had rendered), and the group title is written into the
+  node that holds the theme's label instead of beside it ("Size Departments").
+  Option counts follow the prototype's format, so a theme that draws the brackets in CSS no
+  longer shows "((39))".
+- **Tests: data providers declared with `#[DataProvider]` attributes** (and static), so the suite
+  runs on PHPUnit 12 as well as 10; the `@dataProvider` annotations remain for older runners.
+- **Instant search: filters in the URL are applied on load.** `filter[color]=58,59` (the shape
+  `syncUrl`/`filterHref` write) and `filter[color][]=58` are read into the initial state, so a
+  reload, shared link or middle-clicked option no longer shows the unfiltered result set.
+
 ## [2.10.0] - 2026-09-04
 
 ### Added

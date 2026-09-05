@@ -69,8 +69,7 @@
          + cron stay native). Overrides ONLY _assignProducts(); flag-gated (default 0) with a
          hard native fallback for any missing/partial doc, composite/custom-option cart, or
          non-servable area. See the class for the full safety contract. -->
-    <preference for="Magento\Quote\Model\ResourceModel\Quote\Item\Collection"
-                type="ParkkTech\FastMagento\Model\ResourceModel\Quote\Item\Collection" />
+
 
     <!-- Optimistic-stock: skip the per-qty-set MSI stock revalidation (QuantityValidator) on
          the customer-facing quote path — the single biggest query source on a physical-product
@@ -139,4 +138,16 @@
         <plugin name="fastmagento_ratings_cache_invalidate_option"
                 type="ParkkTech\FastMagento\Plugin\Review\RatingsCacheInvalidationPlugin" sortOrder="10"/>
     </type>
+    <type name="Magento\Framework\Mview\View\Subscription">
+        <plugin name="fastmagento_relationship_entity_id" type="ParkkTech\FastMagento\Plugin\Mview\RelationshipEntityId"/>
+    </type>
+    <!-- Optional Commerce hooks: no constructor dependency on Commerce-only classes. -->
+    <type name="Magento\CatalogStaging\Model\ProductApplier">
+        <plugin name="fastmagento_product_staging_reindex" type="ParkkTech\FastMagento\Plugin\Staging\ProductReindex"/>
+    </type>
+    <type name="Magento\CatalogStaging\Model\CategoryApplier">
+        <plugin name="fastmagento_category_staging_reindex" type="ParkkTech\FastMagento\Plugin\Staging\CategoryReindex"/>
+    </type>
+    <preference for="Magento\Quote\Model\ResourceModel\Quote\Item\Collection"
+                type="ParkkTech\FastMagento\Model\ResourceModel\Quote\Item\Collection" />
 </config>
