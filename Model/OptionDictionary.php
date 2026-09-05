@@ -46,7 +46,8 @@ class OptionDictionary
         private readonly EngineResolver $engineResolver,
         private readonly OpenSearchConfig $config,
         private readonly ScopeConfigInterface $scopeConfig,
-        private readonly LoggerInterface $logger
+        private readonly LoggerInterface $logger,
+        private readonly \ParkkTech\FastMagento\Model\OpenSearch\BoundedBulkWriter $bulkWriter
     ) {
     }
 
@@ -299,9 +300,7 @@ class OptionDictionary
                 }
                 if ($current !== null) { yield $header($current, $currentCode, $inline); }
             })();
-            $writer = \Magento\Framework\App\ObjectManager::getInstance()
-                ->get(\ParkkTech\FastMagento\Model\OpenSearch\BoundedBulkWriter::class);
-            $written = $writer->write($client, $generation, $documents);
+            $written = $this->bulkWriter->write($client, $generation, $documents);
             $client->indices()->refresh(['index' => $generation]);
             $actual = (int)($client->count(['index' => $generation])['count'] ?? -1);
             if ($actual !== $written) { throw new \RuntimeException('Option dictionary document count does not match the source.'); }

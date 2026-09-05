@@ -82,6 +82,8 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
         private WriteLog $writeLog,
         private ProductRepositoryInterface $productRepository,
         private readonly EntityLink $entityLink,
+        private readonly \ParkkTech\FastMagento\Model\OpenSearch\BoundedBulkWriter $bulkWriter,
+        private readonly \ParkkTech\FastMagento\Model\Projection\ExtensionAttributes $extensionProjection,
         private ?\Magento\Framework\Stdlib\DateTime\TimezoneInterface $localeDate = null,
         private ?\ParkkTech\FastMagento\Model\OpenSearch\IndexSettings $indexSettings = null,
     ) {
@@ -1094,9 +1096,7 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
 
     private function bulkIndexNDJSON($client, string $indexName, array $docs): void
     {
-        $writer = \Magento\Framework\App\ObjectManager::getInstance()
-            ->get(\ParkkTech\FastMagento\Model\OpenSearch\BoundedBulkWriter::class);
-        $writer->write($client->getOpenSearchClient(), $indexName, $docs);
+        $this->bulkWriter->write($client->getOpenSearchClient(), $indexName, $docs);
     }
 
     private function summarizeBulkErrors(array $response): array
@@ -1255,7 +1255,7 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
 
     private function extensionProjection(): \ParkkTech\FastMagento\Model\Projection\ExtensionAttributes
     {
-        return \Magento\Framework\App\ObjectManager::getInstance()->get(\ParkkTech\FastMagento\Model\Projection\ExtensionAttributes::class);
+        return $this->extensionProjection;
     }
 
     private function prepareDoc(\Magento\Catalog\Model\Product $product): array

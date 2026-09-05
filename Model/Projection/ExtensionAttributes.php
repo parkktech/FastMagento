@@ -2,10 +2,10 @@
 declare(strict_types=1);
 namespace ParkkTech\FastMagento\Model\Projection;
 use Magento\Catalog\Api\Data\{ProductInterface,ProductExtensionFactory};
-use Magento\Framework\Api\{ExtensionAttribute\Config,DataObjectHelper,SimpleDataObjectConverter};
+use Magento\Framework\Api\{ExtensionAttribute\Config,DataObjectHelper,ObjectFactory,SimpleDataObjectConverter};
 use Magento\Framework\EntityManager\Operation\Read\ReadExtensions;
 use Magento\Framework\Reflection\DataObjectProcessor;
-use Magento\Framework\{DataObject,ObjectManagerInterface};
+use Magento\Framework\DataObject;
 
 /** Project registered extension data at indexing time; reconstruct typed objects without reads. */
 class ExtensionAttributes
@@ -18,7 +18,7 @@ class ExtensionAttributes
         private readonly DataObjectProcessor $processor,
         private readonly DataObjectHelper $helper,
         private readonly ProductExtensionFactory $factory,
-        private readonly ObjectManagerInterface $objects,
+        private readonly ObjectFactory $objectFactory,
         private readonly \Magento\Framework\App\State $state
     ) {}
 
@@ -108,7 +108,8 @@ class ExtensionAttributes
         }
         if (!isset($value['encoding'])) { return $value; }
         // The installed extension declaration controls the class, never an indexed classname.
-        $object = $this->objects->create($type);
+        // Api\ObjectFactory is what DataObjectHelper itself uses for nested data objects.
+        $object = $this->objectFactory->create($type, []);
         if ($value['encoding'] === 'data' && $object instanceof DataObject) {
             $object->setData($value['value']);
         } else {
