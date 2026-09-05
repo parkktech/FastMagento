@@ -42,15 +42,10 @@ class CategoryChildrenPlugin
     public function __construct(
         private readonly ScopeConfigInterface $scopeConfig,
         private readonly CategoryDataProvider $categoryData,
-        // Optional-with-fallback so an existing install's compiled DI survives the upgrade.
-        private ?CategoryModelBuilder $modelBuilder = null,
-        private ?DataCollectionFactory $dataCollectionFactory = null,
-        private ?StoreManagerInterface $storeManager = null
+        private readonly CategoryModelBuilder $modelBuilder,
+        private readonly DataCollectionFactory $dataCollectionFactory,
+        private readonly StoreManagerInterface $storeManager
     ) {
-        $om = \Magento\Framework\App\ObjectManager::getInstance();
-        $this->modelBuilder = $modelBuilder ?? $om->get(CategoryModelBuilder::class);
-        $this->dataCollectionFactory = $dataCollectionFactory ?? $om->get(DataCollectionFactory::class);
-        $this->storeManager = $storeManager ?? $om->get(StoreManagerInterface::class);
     }
 
     /**

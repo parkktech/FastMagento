@@ -112,6 +112,27 @@
     <type name="ParkkTech\FastMagento\Model\ResourceModel\Quote\Item\Collection">
         <arguments>
             <argument name="productCollectionFactory" xsi:type="object">ParkkTech\FastMagento\Model\ResourceModel\Quote\Item\AbsentCheckProductCollectionFactory</argument>
+            <!-- Appended after core's optional parameters to keep positions; DI does not
+                 auto-resolve optional parameters, so they are declared here. -->
+            <argument name="osFetcher" xsi:type="object">ParkkTech\FastMagento\Helper\OpenSearchPdpFetcher</argument>
+            <argument name="osShellBuilder" xsi:type="object">ParkkTech\FastMagento\Helper\ShellProductBuilder</argument>
+            <argument name="osAppState" xsi:type="object">Magento\Framework\App\State</argument>
+            <argument name="osScopeConfig" xsi:type="object">Magento\Framework\App\Config\ScopeConfigInterface</argument>
+            <argument name="osQuoteModelConfig" xsi:type="object">Magento\Quote\Model\Config</argument>
+        </arguments>
+    </type>
+    <type name="ParkkTech\FastMagento\Model\ResourceModel\Quote\Item\AbsentCheckProductCollection">
+        <plugin name="fastmagento_absent_check_from_index"
+                type="ParkkTech\FastMagento\Plugin\Quote\AbsentCheckFromIndexPlugin" sortOrder="10"/>
+    </type>
+    <type name="ParkkTech\FastMagento\Model\ShellProduct\ShellNoEavProduct">
+        <arguments>
+            <!-- Appended after core Product's $data so its position is unchanged; declared here
+                 because DI does not auto-resolve optional parameters. -->
+            <argument name="urlFinder" xsi:type="object">Magento\UrlRewrite\Model\UrlFinderInterface</argument>
+            <argument name="categoryCollectionFactory" xsi:type="object">Magento\Catalog\Model\ResourceModel\Category\CollectionFactory</argument>
+            <argument name="scopeConfig" xsi:type="object">Magento\Framework\App\Config\ScopeConfigInterface</argument>
+            <argument name="customerGroupSession" xsi:type="object">Magento\Customer\Model\Session</argument>
         </arguments>
     </type>
     <!-- fastmagento:doctor extension point. Core ships no providers; other modules add

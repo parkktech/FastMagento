@@ -84,17 +84,9 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
         private readonly EntityLink $entityLink,
         private readonly \ParkkTech\FastMagento\Model\OpenSearch\BoundedBulkWriter $bulkWriter,
         private readonly \ParkkTech\FastMagento\Model\Projection\ExtensionAttributes $extensionProjection,
-        private ?\Magento\Framework\Stdlib\DateTime\TimezoneInterface $localeDate = null,
-        private ?\ParkkTech\FastMagento\Model\OpenSearch\IndexSettings $indexSettings = null,
+        private readonly \Magento\Framework\Stdlib\DateTime\TimezoneInterface $localeDate,
+        private readonly \ParkkTech\FastMagento\Model\OpenSearch\IndexSettings $indexSettings,
     ) {
-        $this->localeDate = $localeDate
-            ?? \Magento\Framework\App\ObjectManager::getInstance()
-                ->get(\Magento\Framework\Stdlib\DateTime\TimezoneInterface::class);
-        // Optional-with-fallback so an existing install's compiled DI keeps working across the
-        // upgrade that introduces it (same pattern as $localeDate above).
-        $this->indexSettings = $indexSettings
-            ?? \Magento\Framework\App\ObjectManager::getInstance()
-                ->get(\ParkkTech\FastMagento\Model\OpenSearch\IndexSettings::class);
         $this->clientResolver = $clientResolver;
         $this->engineResolver = $engineResolver;
         $this->productCollectionFactory = $productCollectionFactory;

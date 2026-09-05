@@ -33,10 +33,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   concrete index is replaced by the alias on the first rebuild.
 - **Tier prices** are indexed for the index store's website instead of hard-coded website 1.
 - `CategoryModelBuilder` keeps category ids string-valued to match strictly typed callers.
-- **No new `ObjectManager` calls.** `BoundedBulkWriter` and the extension projection are constructor-
-  injected into `ProductIndexer`, `OptionDictionary` and `ShellProductBuilder` (new required
-  constructor parameters; subclasses calling the parent constructor must pass them), and the
-  projection builds nested data objects through `Magento\Framework\Api\ObjectFactory`.
+- **No `ObjectManager` lookups anywhere in the module** (factories excepted, as Magento intends).
+  `ProductIndexer`, `CategoryIndexer`, `RelevanceConfig` and `CategoryChildrenPlugin` take their
+  dependencies as required constructor parameters (the former `?? ObjectManager::getInstance()`
+  fallbacks are gone; subclasses calling the parent constructor must pass them). The preference
+  subclasses `Quote\Item\Collection` and `ShellNoEavProduct` keep core's parameter positions and
+  receive their appended dependencies from `etc/di.xml` arguments, failing fast with a
+  `LogicException` if those are missing. The cart's absent-product lookup moved into
+  `Plugin\Quote\AbsentCheckFromIndexPlugin` with an injected fetcher. The legacy
+  `Fulltext\Collection` no longer overrides `_loadEntities()`: the hydration plugin already
+  intercepts it on every subclass. The extension projection builds nested data objects through
+  `Magento\Framework\Api\ObjectFactory`.
+  **Upgrade note:** because constructor signatures changed, run `setup:di:compile` against the new
+  code before `setup:upgrade --keep-generated`, or run `setup:upgrade` without that flag.
 
 ### Fixed
 - **Instant search: theme-rendered facets on themes with an ajax layered navigation.** The theme's

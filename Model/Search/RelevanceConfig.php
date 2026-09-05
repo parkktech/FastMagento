@@ -29,13 +29,8 @@ class RelevanceConfig
     public function __construct(
         private readonly ScopeConfigInterface $scopeConfig,
         private readonly Json $json,
-        // Optional-with-fallback so an existing install's compiled DI survives the upgrade
-        // that introduces auto-detected facets.
-        private ?\ParkkTech\FastMagento\Model\Config\Source\FacetAttributes $facetAttributeSource = null
+        private readonly \ParkkTech\FastMagento\Model\Config\Source\FacetAttributes $facetAttributeSource
     ) {
-        $this->facetAttributeSource = $facetAttributeSource
-            ?? \Magento\Framework\App\ObjectManager::getInstance()
-                ->get(\ParkkTech\FastMagento\Model\Config\Source\FacetAttributes::class);
     }
 
     /**
