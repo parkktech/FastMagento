@@ -69,7 +69,8 @@
          + cron stay native). Overrides ONLY _assignProducts(); flag-gated (default 0) with a
          hard native fallback for any missing/partial doc, composite/custom-option cart, or
          non-servable area. See the class for the full safety contract. -->
-
+    <preference for="Magento\Quote\Model\ResourceModel\Quote\Item\Collection"
+                type="ParkkTech\FastMagento\Model\ResourceModel\Quote\Item\Collection" />
 
     <!-- Optimistic-stock: skip the per-qty-set MSI stock revalidation (QuantityValidator) on
          the customer-facing quote path — the single biggest query source on a physical-product
@@ -121,20 +122,6 @@
             <argument name="osQuoteModelConfig" xsi:type="object">Magento\Quote\Model\Config</argument>
         </arguments>
     </type>
-    <type name="ParkkTech\FastMagento\Model\ResourceModel\Quote\Item\AbsentCheckProductCollection">
-        <plugin name="fastmagento_absent_check_from_index"
-                type="ParkkTech\FastMagento\Plugin\Quote\AbsentCheckFromIndexPlugin" sortOrder="10"/>
-    </type>
-    <type name="ParkkTech\FastMagento\Model\ShellProduct\ShellNoEavProduct">
-        <arguments>
-            <!-- Appended after core Product's $data so its position is unchanged; declared here
-                 because DI does not auto-resolve optional parameters. -->
-            <argument name="urlFinder" xsi:type="object">Magento\UrlRewrite\Model\UrlFinderInterface</argument>
-            <argument name="categoryCollectionFactory" xsi:type="object">Magento\Catalog\Model\ResourceModel\Category\CollectionFactory</argument>
-            <argument name="scopeConfig" xsi:type="object">Magento\Framework\App\Config\ScopeConfigInterface</argument>
-            <argument name="customerGroupSession" xsi:type="object">Magento\Customer\Model\Session</argument>
-        </arguments>
-    </type>
     <!-- fastmagento:doctor extension point. Core ships no providers; other modules add
          CheckProviderInterface implementations to this array. -->
     <type name="ParkkTech\FastMagento\Model\Doctor\Diagnostics">
@@ -159,16 +146,31 @@
         <plugin name="fastmagento_ratings_cache_invalidate_option"
                 type="ParkkTech\FastMagento\Plugin\Review\RatingsCacheInvalidationPlugin" sortOrder="10"/>
     </type>
+    <type name="ParkkTech\FastMagento\Model\ResourceModel\Quote\Item\AbsentCheckProductCollection">
+        <plugin name="fastmagento_absent_check_from_index"
+                type="ParkkTech\FastMagento\Plugin\Quote\AbsentCheckFromIndexPlugin" sortOrder="10"/>
+    </type>
+    <type name="ParkkTech\FastMagento\Model\ShellProduct\ShellNoEavProduct">
+        <arguments>
+            <!-- Appended after core Product's $data so its position is unchanged; declared here
+                 because DI does not auto-resolve optional parameters. -->
+            <argument name="urlFinder" xsi:type="object">Magento\UrlRewrite\Model\UrlFinderInterface</argument>
+            <argument name="categoryCollectionFactory" xsi:type="object">Magento\Catalog\Model\ResourceModel\Category\CollectionFactory</argument>
+            <argument name="scopeConfig" xsi:type="object">Magento\Framework\App\Config\ScopeConfigInterface</argument>
+            <argument name="customerGroupSession" xsi:type="object">Magento\Customer\Model\Session</argument>
+        </arguments>
+    </type>
+    <!-- Adobe Commerce: relationship-table changelog rows carry row_id; translate them to the
+         public entity id. No-op on Open Source (EntityLink reports entity_id). -->
     <type name="Magento\Framework\Mview\View\Subscription">
         <plugin name="fastmagento_relationship_entity_id" type="ParkkTech\FastMagento\Plugin\Mview\RelationshipEntityId"/>
     </type>
-    <!-- Optional Commerce hooks: no constructor dependency on Commerce-only classes. -->
+    <!-- Optional Commerce hooks: the plugin classes depend only on IndexerRegistry, and a plugin
+         declared on a class that is not installed is ignored, so Open Source is unaffected. -->
     <type name="Magento\CatalogStaging\Model\ProductApplier">
         <plugin name="fastmagento_product_staging_reindex" type="ParkkTech\FastMagento\Plugin\Staging\ProductReindex"/>
     </type>
     <type name="Magento\CatalogStaging\Model\CategoryApplier">
         <plugin name="fastmagento_category_staging_reindex" type="ParkkTech\FastMagento\Plugin\Staging\CategoryReindex"/>
     </type>
-    <preference for="Magento\Quote\Model\ResourceModel\Quote\Item\Collection"
-                type="ParkkTech\FastMagento\Model\ResourceModel\Quote\Item\Collection" />
 </config>

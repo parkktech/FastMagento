@@ -19,7 +19,7 @@ use Psr\Log\LoggerInterface;
  * attribute source model, which loads `eav_attribute_option(_value)` from MySQL — so every PDP
  * additional-attributes row, layered-nav facet and swatch on a served page still hits the DB even
  * though the product itself is OpenSearch-served. This service projects each option-bearing
- * attribute's {option_id => label} set into small, independently addressed option documents (default store
+ * attribute's full {option_id => label} set into one OpenSearch doc per attribute (default store
  * view labels, admin fallback) and serves the labels back, so those lookups leave MySQL entirely.
  *
  * Read path: getOptions()/getOptionText() fetch one attribute's doc (cached per request). On any
@@ -46,8 +46,7 @@ class OptionDictionary
         private readonly EngineResolver $engineResolver,
         private readonly OpenSearchConfig $config,
         private readonly ScopeConfigInterface $scopeConfig,
-        private readonly LoggerInterface $logger,
-        private readonly \ParkkTech\FastMagento\Model\OpenSearch\BoundedBulkWriter $bulkWriter
+        private readonly LoggerInterface $logger
     ) {
     }
 
@@ -66,7 +65,6 @@ class OptionDictionary
      */
     public function getOptions(int $attributeId): array
     {
-        $this->resetStoreMemo();
         if ($attributeId <= 0 || !$this->isEnabled()) {
             return [];
         }
@@ -82,11 +80,8 @@ class OptionDictionary
                     'id' => (string) $attributeId,
                 ]);
                 $src = $res['_source'] ?? [];
-                $rows = !empty($src['inline_options_complete']) || (int)($src['format_version'] ?? 1) < 2
-                    ? ($src['options'] ?? []) : $this->readOptionRows($client, $attributeId);
-                foreach ($rows as $o) {
-                    $label = isset($o['labels']) ? ($o['labels'][$this->memoStoreId] ?? $o['labels'][0] ?? '') : ($o['label'] ?? '');
-                    $options[] = ['value' => (string)($o['value'] ?? ''), 'label' => (string)$label];
+                foreach (($src['options'] ?? []) as $o) {
+                    $options[] = ['value' => (string) ($o['value'] ?? ''), 'label' => (string) ($o['label'] ?? '')];
                 }
             }
         } catch (\Throwable $e) {
@@ -101,27 +96,9 @@ class OptionDictionary
         return $options;
     }
 
-    private function readOptionRows(object $client, int $attributeId): array
-    {
-        $out = []; $after = null;
-        do {
-            $body = ['size' => 100, '_source' => ['option'],
-                'query' => ['bool' => ['filter' => [
-                    ['term' => ['kind' => 'option']], ['term' => ['attribute_id' => $attributeId]],
-                ]]], 'sort' => [['sort_order' => 'asc'], ['option_id' => 'asc']]];
-            if ($after !== null) { $body['search_after'] = $after; }
-            $response = $client->search(['index' => $this->config->getAttributeOptionIndexName(), 'body' => $body]);
-            $hits = $response['hits']['hits'] ?? [];
-            foreach ($hits as $hit) { $out[] = $hit['_source']['option']; }
-            $after = $hits ? end($hits)['sort'] : null;
-        } while (count($hits) === 100);
-        return $out;
-    }
-
     /** Label for one option id, or null on a miss (caller falls back to native). */
     public function getOptionText(int $attributeId, string $optionId): ?string
     {
-        $this->resetStoreMemo();
         if ($optionId === '' || !$this->isEnabled()) {
             return null;
         }
@@ -154,22 +131,22 @@ class OptionDictionary
         try {
             $client = $this->getClient();
             if ($client) {
-                $after = null;
-                do {
-                    $body = ['size' => 500, '_source' => ['attribute_id', 'attribute_code'],
+                $res = $client->search([
+                    'index' => $this->config->getAttributeOptionIndexName(),
+                    'body' => [
+                        'size' => 1000,
+                        '_source' => ['attribute_id', 'attribute_code'],
                         'query' => ['exists' => ['field' => 'attribute_code']],
-                        'sort' => [['attribute_id' => 'asc']]];
-                    if ($after !== null) { $body['search_after'] = $after; }
-                    $res = $client->search(['index' => $this->config->getAttributeOptionIndexName(), 'body' => $body]);
-                    $hits = $res['hits']['hits'] ?? [];
-                    foreach ($hits as $hit) {
-                        $src = $hit['_source'] ?? [];
-                        $code = (string)($src['attribute_code'] ?? '');
-                        $id = (int)($src['attribute_id'] ?? 0);
-                        if ($code !== '' && $id > 0) { $this->codeMap[$code] = $id; }
+                    ],
+                ]);
+                foreach (($res['hits']['hits'] ?? []) as $hit) {
+                    $src = $hit['_source'] ?? [];
+                    $code = (string) ($src['attribute_code'] ?? '');
+                    $id = (int) ($src['attribute_id'] ?? 0);
+                    if ($code !== '' && $id > 0) {
+                        $this->codeMap[$code] = $id;
                     }
-                    $after = $hits ? end($hits)['sort'] : null;
-                } while (count($hits) === 500);
+                }
             }
         } catch (\Throwable $e) {
             // index missing or OS down — caller degrades to whatever label it already had
@@ -210,7 +187,7 @@ class OptionDictionary
         $client = $this->getClient();
         if (!$client) {
             $this->logger->error('[FastMagento] OptionDictionary: no OpenSearch client.');
-            throw new \RuntimeException('Option dictionary rebuild requires an OpenSearch client.');
+            return 0;
         }
         $index = $this->config->getAttributeOptionIndexName();
         $storeId = $this->defaultStoreId();
@@ -218,14 +195,7 @@ class OptionDictionary
         $tOpt = $this->resource->getTableName('eav_attribute_option');
         $tVal = $this->resource->getTableName('eav_attribute_option_value');
         $tAttr = $this->resource->getTableName('eav_attribute');
-        $swatchesByStore = [];
-        foreach (array_unique(array_merge([0], array_keys($this->storeManager->getStores()))) as $sid) {
-            $swatchesByStore[(int)$sid] = $this->loadSwatches($conn, (int)$sid);
-        }
-        $labelsByOption = [];
-        foreach ($conn->fetchAll($conn->select()->from($tVal, ['option_id','store_id','value'])) as $label) {
-            $labelsByOption[(int)$label['option_id']][(int)$label['store_id']] = $label['value'];
-        }
+        $swatchByOption = $this->loadSwatches($conn, $storeId);
 
         // one pass: every option of every select/multiselect attribute, default-store label w/ admin fallback
         $select = $conn->select()
@@ -256,92 +226,63 @@ class OptionDictionary
             ->where('a.frontend_input IN (?)', ['select', 'multiselect'])
             ->order('o.attribute_id')->order('o.sort_order')->order('o.option_id');
 
-        // One option per document keeps a 50k-option attribute out of any single request.
-        // Build privately, validate, then swap the alias. Failed builds leave the old dictionary.
-        $generation = $index . '_v' . gmdate('YmdHis') . '_' . bin2hex(random_bytes(3));
-        $client->indices()->create(['index' => $generation, 'body' => ['mappings' => ['properties' => [
-            'kind' => ['type' => 'keyword'], 'attribute_id' => ['type' => 'integer'],
-            'attribute_code' => ['type' => 'keyword'], 'option_id' => ['type' => 'long'],
-            'sort_order' => ['type' => 'integer'], 'option' => ['type' => 'object', 'enabled' => false],
-            'options' => ['type' => 'object', 'enabled' => false],
-        ]]]]);
+        // stream rows and flush per-attribute so a 50k-option attribute never balloons memory
+        $stmt = $conn->query($select);
+        $current = null;
+        $buffer = [];
+        $docs = [];
         $count = 0;
-        $aliasSwapAttempted = false;
-        try {
-            $documents = (function () use ($conn, $select, $swatchesByStore, $labelsByOption, $storeId, &$count): \Generator {
-                $stmt = $conn->query($select);
-                $current = null; $currentCode = ''; $inline = []; $inlineBytes = 0;
-                $header = static function ($id, $code, $inline) use ($storeId): array {
-                    return ['id' => (string)$id, 'body' => ['kind' => 'attribute', 'attribute_id' => $id,
-                        'attribute_code' => $code, 'format_version' => 2, 'store_id' => $storeId,
-                        'inline_options_complete' => $inline !== null, 'options' => $inline ?? []]];
-                };
-                while ($row = $stmt->fetch()) {
-                    $aid = (int)$row['attribute_id'];
-                    if ($current !== $aid) {
-                        if ($current !== null) { yield $header($current, $currentCode, $inline); }
-                        $current = $aid; $currentCode = (string)($row['attribute_code'] ?? ''); $count++;
-                        $inline = []; $inlineBytes = 0;
-                    }
-                    $option = [
-                        'value' => (string)$row['option_id'], 'label' => (string)($row['label'] ?? ''),
-                        'sort' => (int)$row['sort_order'],
-                        'labels' => $labelsByOption[(int)$row['option_id']] ?? [],
-                        'swatches' => array_map(static fn($map) => $map[(int)$row['option_id']] ?? null, $swatchesByStore),
-                    ];
-                    if ($inline !== null) {
-                        $inlineBytes += strlen(json_encode($option, JSON_THROW_ON_ERROR));
-                        if ($inlineBytes <= 65536) { $inline[] = $option; } else { $inline = null; }
-                    }
-                    yield ['id' => 'option_' . $row['option_id'], 'body' => [
-                        'kind' => 'option', 'attribute_id' => $aid, 'option_id' => (int)$row['option_id'],
-                        'sort_order' => (int)$row['sort_order'], 'option' => $option,
-                    ]];
-                }
-                if ($current !== null) { yield $header($current, $currentCode, $inline); }
-            })();
-            $written = $this->bulkWriter->write($client, $generation, $documents);
-            $client->indices()->refresh(['index' => $generation]);
-            $actual = (int)($client->count(['index' => $generation])['count'] ?? -1);
-            if ($actual !== $written) { throw new \RuntimeException('Option dictionary document count does not match the source.'); }
-            $actions = [];
-            $oldIndices = [];
-            if ($client->indices()->existsAlias(['name' => $index])) {
-                $oldIndices = array_keys($client->indices()->getAlias(['name' => $index]));
-                foreach ($oldIndices as $old) { $actions[] = ['remove' => ['index' => $old, 'alias' => $index]]; }
-            } elseif ($client->indices()->exists(['index' => $index])) {
-                $actions[] = ['remove_index' => ['index' => $index]];
+        $flush = function (array &$docs) use ($client, $index): void {
+            if (!$docs) {
+                return;
             }
-            $actions[] = ['add' => ['index' => $generation, 'alias' => $index]];
-            $aliasSwapAttempted = true;
-            $client->indices()->updateAliases(['body' => ['actions' => $actions]]);
-            foreach ($oldIndices as $old) {
-                if (str_starts_with($old, $index . '_v')) {
-                    try { $client->indices()->delete(['index' => $old]); } catch (\Throwable $e) {
-                        $this->logger->warning('[FastMagento] Old option index cleanup failed: ' . $e->getMessage());
-                    }
-                }
+            $lines = '';
+            foreach ($docs as $d) {
+                $lines .= json_encode(['index' => ['_id' => (string) $d['attribute_id'], '_index' => $index]]) . "\n";
+                $lines .= json_encode($d) . "\n";
             }
-        } catch (\Throwable $e) {
-            // An alias acknowledgement can time out after the swap committed. Never delete
-            // a potentially active generation on that ambiguous failure.
-            if (!$aliasSwapAttempted) {
-                try { $client->indices()->delete(['index' => $generation]); } catch (\Throwable $cleanup) {}
+            $lines .= "\n";
+            $resp = $client->bulk(['body' => $lines]);
+            if (!empty($resp['errors'])) {
+                $this->logger->error('[FastMagento] OptionDictionary bulk errors: ' . json_encode($resp));
             }
-            throw $e;
-        }
-        $this->cache = []; $this->labelCache = []; $this->codeMap = null; $this->swatchMemo = [];
-        $this->logger->info("[FastMagento] OptionDictionary rebuilt atomically: {$count} attributes (store {$storeId}).");
-        return $count;
-    }
+            $docs = [];
+        };
 
-    private ?int $memoStoreId = null;
-    private function resetStoreMemo(): void
-    {
-        $id = (int)$this->storeManager->getStore()->getId();
-        if ($this->memoStoreId !== $id) {
-            $this->memoStoreId = $id; $this->cache = []; $this->labelCache = []; $this->swatchMemo = [];
+        $currentCode = '';
+        while ($row = $stmt->fetch()) {
+            $aid = (int) $row['attribute_id'];
+            if ($current !== null && $aid !== $current) {
+                $docs[] = ['attribute_id' => $current, 'attribute_code' => $currentCode, 'options' => $buffer];
+                $buffer = [];
+                $count++;
+                if (count($docs) >= 200) {
+                    $flush($docs);
+                }
+            }
+            $current = $aid;
+            $currentCode = (string) ($row['attribute_code'] ?? '');
+            $buffer[] = [
+                'value' => (string) $row['option_id'],
+                'label' => (string) ($row['label'] ?? ''),
+                'sort' => (int) $row['sort_order'],
+                'swatch' => $swatchByOption[(int) $row['option_id']] ?? null,
+            ];
         }
+        if ($current !== null) {
+            $docs[] = ['attribute_id' => $current, 'attribute_code' => $currentCode, 'options' => $buffer];
+            $count++;
+        }
+        $flush($docs);
+
+        // make freshly-written docs immediately gettable
+        try {
+            $client->indices()->refresh(['index' => $index]);
+        } catch (\Throwable $e) {
+            // non-fatal
+        }
+        $this->logger->info("[FastMagento] OptionDictionary rebuilt: {$count} attributes (store {$storeId}).");
+        return $count;
     }
 
     private function defaultStoreId(): int
@@ -404,7 +345,6 @@ class OptionDictionary
      */
     public function getSwatchesByOptionIds(array $optionIds): ?array
     {
-        $this->resetStoreMemo();
         $optionIds = array_values(array_unique(array_filter($optionIds)));
         if (!$optionIds || !$this->isEnabled()) {
             return null;
@@ -415,16 +355,22 @@ class OptionDictionary
             if (!$client) {
                 return null;
             }
-            // v2 uses a directly addressed, small document for each option.
-            try {
-                $res = $client->mget(['index' => $this->config->getAttributeOptionIndexName(),
-                'body' => ['ids' => array_map(static fn ($id) => 'option_' . $id, array_values($missing))]]);
-            } catch (\Throwable $e) { return null; }
-            foreach ($res['docs'] ?? [] as $hit) {
-                if (empty($hit['found'])) { continue; }
-                $option = $hit['_source']['option'] ?? [];
-                $id = (int)($option['value'] ?? 0);
-                if ($id) { $this->swatchMemo[$id] = isset($option['swatches']) ? ($option['swatches'][$this->memoStoreId] ?? $option['swatches'][0] ?? null) : ($option['swatch'] ?? null); }
+            $res = $client->search([
+                'index' => $this->config->getAttributeOptionIndexName(),
+                'body' => [
+                    'size' => 200,
+                    '_source' => ['options'],
+                    'query' => ['terms' => ['options.value.keyword' => array_map('strval', $missing)]],
+                ],
+            ]);
+            $wanted = array_flip(array_map('intval', $missing));
+            foreach ($res['hits']['hits'] ?? [] as $hit) {
+                foreach ($hit['_source']['options'] ?? [] as $option) {
+                    $id = (int) ($option['value'] ?? 0);
+                    if (isset($wanted[$id])) {
+                        $this->swatchMemo[$id] = $option['swatch'] ?? null;
+                    }
+                }
             }
             foreach ($missing as $id) {
                 if (!array_key_exists($id, $this->swatchMemo)) {

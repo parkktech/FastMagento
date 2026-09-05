@@ -16,8 +16,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   empty image configuration from the already-fetched child documents (a theme block returning `[]`
   from `getOptionImages()` no longer forces a swatch AJAX round-trip); nonempty configurations are
   preserved. Full variant galleries already read by the projector are retained in the index.
-- **Bounded bulk writer** (`Model\OpenSearch\BoundedBulkWriter`): bulk requests bounded by encoded
-  bytes, finite retry on transient rejection (429), permanent failures propagated.
 - **Commerce staging hooks**: relationship changelog rows translated from `row_id` to public entity
   ids (`Plugin\Mview\RelationshipEntityId`), affected ids reprojected when scheduled updates apply.
   The `Magento_Staging`/`Magento_CatalogStaging` sequence entries and plugins are optional; Open
@@ -29,8 +27,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   at the public `_loadEntities()` seam of the resolved fulltext collection, so a third-party subclass
   or virtual type keeps working. The `Fulltext\Collection` preference and the Elasticsearch virtual
   types were removed; the class stays for integrations that extend it.
-- **Option dictionaries** use per-option documents and generation/alias publication; an existing
-  concrete index is replaced by the alias on the first rebuild.
 - **Tier prices** are indexed for the index store's website instead of hard-coded website 1.
 - `CategoryModelBuilder` keeps category ids string-valued to match strictly typed callers.
 - **No `ObjectManager` lookups anywhere in the module** (factories excepted, as Magento intends).
