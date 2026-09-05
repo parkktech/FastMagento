@@ -54,6 +54,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   node that holds the theme's label instead of beside it ("Size Departments").
   Option counts follow the prototype's format, so a theme that draws the brackets in CSS no
   longer shows "((39))".
+- **Instant search on Luma/Blank: option labels and counts.** Luma renders the option label as a bare
+  text node and nests an "items" span inside the count, so the refill wrote the label into the wrong
+  span (every option showed the prototype's label) and printed literal brackets that Luma's CSS
+  draws again ("((11))"). The label now goes to the first real text node and the count follows the
+  prototype's format. A malformed percent-escape in the page URL no longer aborts the boot.
 - **Tests: data providers declared with `#[DataProvider]` attributes** (and static), so the suite
   runs on PHPUnit 12 as well as 10; the `@dataProvider` annotations remain for older runners.
 - **Instant search: filters in the URL are applied on load.** `filter[color]=58,59` (the shape

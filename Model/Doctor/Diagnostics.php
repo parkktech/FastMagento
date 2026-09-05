@@ -532,8 +532,8 @@ class Diagnostics
 
         $out = [Check::ok(self::G_PLP, 'Category listing source', 'OpenSearch (falls back to EAV per page on any index miss)')];
 
-        // The listing swap only takes effect if the search engine's collection virtual types were
-        // successfully re-pointed; a third-party module redefining them would silently win.
+        // Hydration is a plugin on the core fulltext collection, so it reaches whatever class the
+        // engine's listing virtual type resolves to, as long as that class inherits from core.
         $expected = \Magento\CatalogSearch\Model\ResourceModel\Fulltext\Collection::class;
         try {
             // Must read the FRONTEND area config: the override is frontend-scoped on purpose, so
@@ -541,6 +541,10 @@ class Diagnostics
             // would report a failure on a perfectly healthy install.
             $frontendConfig = $this->configLoader->load(\Magento\Framework\App\Area::AREA_FRONTEND);
             $actual = $frontendConfig['virtualTypes']['elasticsearchCategoryCollection'] ?? null;
+            // A virtual type may be built from another virtual type; follow the chain to a class.
+            for ($hops = 0; $actual !== null && isset($frontendConfig['virtualTypes'][$actual]) && $hops < 10; $hops++) {
+                $actual = $frontendConfig['virtualTypes'][$actual];
+            }
             if ($actual !== null && !is_a((string)$actual, $expected, true)) {
                 $out[] = Check::fail(
                     self::G_PLP,

@@ -78,9 +78,17 @@
         var filters = {};
         (window.location.search.replace(/^\?/, '').split('&')).forEach(function (pair) {
             var eq = pair.indexOf('='),
-                key = decodeURIComponent((eq > -1 ? pair.slice(0, eq) : pair).replace(/\+/g, ' ')),
-                value = eq > -1 ? decodeURIComponent(pair.slice(eq + 1).replace(/\+/g, ' ')) : '',
-                match = key.match(/^filter\[([^\]]+)\](\[\])?$/);
+                key,
+                value,
+                match;
+            try {
+                key = decodeURIComponent((eq > -1 ? pair.slice(0, eq) : pair).replace(/\+/g, ' '));
+                value = eq > -1 ? decodeURIComponent(pair.slice(eq + 1).replace(/\+/g, ' ')) : '';
+            } catch (err) {
+                // A malformed escape in someone's URL must not stop the results page from booting.
+                return;
+            }
+            match = key.match(/^filter\[([^\]]+)\](\[\])?$/);
             if (!match) {
                 return;
             }
@@ -616,12 +624,19 @@
                 count = li.querySelector('.count'),
                 labelEl;
 
-            // The label lives in the first span that is not the count and not screen-reader-only.
+            // The label lives in the first span that is neither the count (nor inside it: Luma nests
+            // a "items" span in there) nor screen-reader-only. Luma renders the label as a bare text
+            // node beside the count, so with no such span the first text node of the link is it.
             labelEl = Array.prototype.filter.call(link.querySelectorAll('span'), function (s) {
-                return !s.classList.contains('count') && !s.classList.contains('sr-only');
-            })[0] || link;
+                return !s.classList.contains('count') && !s.classList.contains('sr-only')
+                    && !(s.closest && s.closest('.count'));
+            })[0] || null;
 
-            labelEl.textContent = opt.label;
+            if (labelEl) {
+                labelEl.textContent = opt.label;
+            } else if (!setFirstText(link, opt.label)) {
+                link.textContent = opt.label;
+            }
             if (count) {
                 // Follow the prototype's own format: a theme that prints "(39)" gets the same,
                 // one that prints "39" and draws the brackets in CSS must not get "((39))".

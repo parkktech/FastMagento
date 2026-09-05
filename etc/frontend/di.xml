@@ -287,10 +287,14 @@
         hydration-only change: the id list, ordering, pagination and layered-nav counts already
         come from OpenSearch on a 2.4 install with a search engine configured.
     -->
-    <!-- Hydration is a plugin on the core fulltext collection (see the end of this file), not a
-         preference: a preference replaced the class, which broke any othe
-nly swaps the base
-        class. Both engines are covered because Magento_OpenSearch reuses the elasticsearch* names.
+    <!--
+        Hydration is a PLUGIN on the core fulltext collection (declared at the end of this file),
+        not a preference. A preference replaced the class, and Magento's search-engine modules
+        build the listing collections through virtual types (`elasticsearchCategoryCollection`,
+        `elasticsearchFulltextSearchCollection`) that other modules (Amasty, Swissup, site code)
+        also re-point, so whichever di.xml loaded last decided whether listings were served. A
+        plugin applies to the core class, every subclass and every virtual type built from it,
+        whoever owns them, so the engine virtual types are left exactly as core defines them.
     -->
     <virtualType name="Magento\CatalogSearch\Model\ResourceModel\Fulltext\SearchCollection"
                  type="ParkkTech\FastMagento\Model\ResourceModel\Fulltext\Collection"/>

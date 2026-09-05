@@ -123,7 +123,7 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
 
     public function executeRow($id): void
     {
-        $this->extensionProjection()->reset();
+        $this->extensionProjection->reset();
         try {
             $id = (int)$id;
             /** @var Product $product */
@@ -154,7 +154,7 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
 
     public function execute($ids)
     {
-        $this->extensionProjection()->reset();
+        $this->extensionProjection->reset();
         if (empty($ids)) {
             // Stream entity ids set-based; never materialise full products just to list ids.
             $connection = $this->productCollectionFactory->create()->getConnection();
@@ -255,7 +255,7 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
      */
     public function indexProductObject(\Magento\Catalog\Model\Product $product): void
     {
-        $this->extensionProjection()->reset();
+        $this->extensionProjection->reset();
         try {
             if (!$product->getId()) {
                 return;
@@ -1294,15 +1294,10 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
     }
 
 
-    private function extensionProjection(): \ParkkTech\FastMagento\Model\Projection\ExtensionAttributes
-    {
-        return $this->extensionProjection;
-    }
-
     private function prepareDoc(\Magento\Catalog\Model\Product $product): array
     {
         $productData = $product->getData();
-        $productData['fm_extension_attributes'] = $this->extensionProjection()->project($product);
+        $productData['fm_extension_attributes'] = $this->extensionProjection->project($product);
         // Drop the product type's RUNTIME object caches (`_cache_instance_configurable_attributes`,
         // `_cache_instance_used_product_attributes`, …). getData() carries them once the type
         // instance has run, and serializing them into the index bloats the doc AND, served back on
@@ -1814,7 +1809,7 @@ class ProductIndexer implements ActionInterface, MviewActionInterface
             $stock = $stockMap[$cid] ?? ['qty' => 0.0, 'is_in_stock' => false];
             $childProductsArray[] = [
                 'entity_id' => $cid,
-                'fm_extension_attributes' => $this->extensionProjection()->project($child),
+                'fm_extension_attributes' => $this->extensionProjection->project($child),
                 // The existing extension projection already read these at index time.
                 // Retain them for inline swatch galleries; do not load them on the storefront.
                 'media_gallery' => $child->getData('media_gallery') ?? ['images' => [], 'values' => []],
